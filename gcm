@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""gcm - Git Commit Message generator (free, via Groq API).
+
+Reads your staged changes, asks an LLM for a Conventional Commits message,
+prints it and lets you commit. No paid API needed (Groq free tier).
+
+Usage:
+  gcm            Generate message and ask to commit
+  gcm -p         Print message only (no prompt)
+  gcm -a         git add -A first, then generate
+  gcm --vi       Vietnamese commit message (default: English)
+  gcm -h         Show help
+
+Config:
+  Set GROQ_API_KEY env var, or put the key in ~/.config/gcm/config
+  Get a free key at https://console.groq.com/keys
+"""
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL = "llama-3.3-70b-versatile"
+MAX_DIFF_CHARS = 12000
+CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
+
+
+# ---- small terminal color helpers ----
+def c(text, code):
+    if not sys.stdout.isatty():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def err(msg):
+    print(c("error: ", "31") + msg, file=sys.stderr)
+
+
+def run_git(args, check=True):
+    """Run a git command, return stdout (stripped)."""
+    res = subprocess.run(
+        ["git"] + args, capture_output=True, text=True
+    )
+    if check and res.returncode != 0:
+        err(res.stderr.strip() or f"git {' '.join(args)} failed")
+        sys.exit(1)
+    return res.stdout
+
+
+def get_api_key():
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if key:
+        return key
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    # accept "KEY" or "GROQ_API_KEY=KEY"
+                    return line.split("=", 1)[-1].strip()
+    err("no Groq API key found.")
+    print(
+        "  Lấy key free tại: " + c("https://console.groq.com/keys", "36"),
+        file=sys.stderr,
+    )
+    print("  Rồi chạy một trong hai cách:", file=sys.stderr)
+    print('    export GROQ_API_KEY="gsk_..."   (thêm vào ~/.bashrc)', file=sys.stderr)
+    print(f'    echo "gsk_..." > {CONFIG_PATH}', file=sys.stderr)
+    sys.exit(1)
+
+
+def ensure_repo():
+    res = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        capture_output=True, text=True,
+    )
+    if res.returncode != 0 or res.stdout.strip() != "true":
+        err("không phải git repository (chạy trong thư mục repo).")
+        sys.exit(1)
+
+
+def build_prompt(diff, files, vietnamese):
+    lang = (
+        "Viết bằng TIẾNG VIỆT." if vietnamese
+        else "Write in ENGLISH."
+    )
+    files_list = "\n".join(files) if files else "(unknown)"
+    system = (
+        "You are an expert developer writing git commit messages. "
+        "Follow the Conventional Commits spec strictly: "
+        "type(scope): short summary in imperative mood. "
+        "Allowed types: feat, fix, docs, style, refactor, perf, test, "
+        "build, ci, chore, revert. "
+        "The summary line must be <= 72 chars, lowercase after the colon, "
+        "no trailing period. "
+        "If the change is non-trivial, add a blank line then 1-4 concise "
+        "bullet points (each starting with '- ') explaining what and why. "
+        f"{lang} "
+        "Output ONLY the commit message, no markdown fences, no preamble."
+    )
+    user = (
+        f"Changed files:\n{files_list}\n\n"
+        f"Git diff (staged):\n{diff}"
+    )
+    return system, user
+
+
+def call_groq(api_key, system, user):
+    payload = {
+        "model": MODEL,
+        "temperature": 0.3,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        API_URL,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "gcm/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "ignore")
+        err(f"Groq API HTTP {e.code}: {detail[:300]}")
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        err(f"lỗi mạng: {e.reason}")
+        sys.exit(1)
+    try:
+        msg = body["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError):
+        err("phản hồi API không hợp lệ: " + json.dumps(body)[:300])
+        sys.exit(1)
+    # strip accidental code fences
+    if msg.startswith("```"):
+        lines = msg.splitlines()
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
+        msg = "\n".join(lines).strip()
+    return msg
+
+
+def commit_with_message(message):
+    res = subprocess.run(
+        ["git", "commit", "-F", "-"], input=message, text=True
+    )
+    sys.exit(res.returncode)
+
+
+def edit_message(message):
+    """Open the message in $EDITOR and return the edited text."""
+    import tempfile
+    editor = os.environ.get("EDITOR", "nano")
+    with tempfile.NamedTemporaryFile(
+        "w+", suffix=".gitcommit", delete=False
+    ) as tf:
+        tf.write(message)
+        path = tf.name
+    subprocess.run([editor, path])
+    with open(path) as f:
+        edited = f.read().strip()
+    os.unlink(path)
+    return edited
+
+
+def main():
+    argv = sys.argv[1:]
+    if "-h" in argv or "--help" in argv:
+        print(__doc__)
+        return
+    print_only = "-p" in argv or "--print" in argv
+    vietnamese = "--vi" in argv
+    add_all = "-a" in argv or "--all" in argv
+
+    ensure_repo()
+
+    if add_all:
+        run_git(["add", "-A"])
+
+    diff = run_git(["diff", "--staged"])
+    files = [
+        ln for ln in run_git(["diff", "--staged", "--name-only"]).splitlines()
+        if ln.strip()
+    ]
+
+    if not diff.strip():
+        # nothing staged - use status to detect unstaged/untracked changes
+        status = run_git(["status", "--porcelain"]).strip()
+        if status:
+            err("chưa stage thay đổi nào. Dùng `git add` hoặc `gcm -a`.")
+        else:
+            err("nothing to commit (working tree clean).")
+        sys.exit(1)
+
+    api_key = get_api_key()
+
+    truncated = len(diff) > MAX_DIFF_CHARS
+    if truncated:
+        diff = diff[:MAX_DIFF_CHARS] + "\n...[diff truncated]..."
+
+    if not print_only:
+        print(c("Đang sinh commit message...", "90"), file=sys.stderr)
+
+    system, user = build_prompt(diff, files, vietnamese)
+    message = call_groq(api_key, system, user)
+
+    if print_only:
+        print(message)
+        return
+
+    print()
+    print(c("─" * 60, "90"))
+    print(c(message, "32"))
+    print(c("─" * 60, "90"))
+    if truncated:
+        print(c("(diff lớn nên đã được cắt bớt khi gửi)", "90"))
+
+    try:
+        choice = input(
+            c("[Enter]", "1") + " commit  "
+            + c("[e]", "1") + " sửa  "
+            + c("[n]", "1") + " hủy: "
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(1)
+
+    if choice == "n":
+        print("Đã hủy.")
+        sys.exit(0)
+    if choice == "e":
+        message = edit_message(message)
+        if not message:
+            err("message rỗng, đã hủy.")
+            sys.exit(1)
+    commit_with_message(message)
+
+
+if __name__ == "__main__":
+    main()
