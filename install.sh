@@ -16,8 +16,9 @@ chmod +x "$SCRIPT_DIR/gcm" 2>/dev/null || true
 case "$OS" in
   MINGW*|MSYS*|CYGWIN*)
     # Windows (Git Bash): symlink hay kẹt, dùng wrapper gọi python trực tiếp
+    # Ưu tiên 'py' (Windows Python launcher) vì không bị alias Store chen vào
     PY=""
-    for cand in python python3 py; do
+    for cand in py python python3; do
       if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
     done
     if [ -z "$PY" ]; then
