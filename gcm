@@ -42,7 +42,9 @@ def err(msg):
 def run_git(args, check=True):
     """Run a git command, return stdout (stripped)."""
     res = subprocess.run(
-        ["git"] + args, capture_output=True, text=True
+        ["git"] + args,
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if check and res.returncode != 0:
         err(res.stderr.strip() or f"git {' '.join(args)} failed")
@@ -76,6 +78,7 @@ def ensure_repo():
     res = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if res.returncode != 0 or res.stdout.strip() != "true":
         err("không phải git repository (chạy trong thư mục repo).")
@@ -153,7 +156,8 @@ def call_groq(api_key, system, user):
 
 def commit_with_message(message):
     res = subprocess.run(
-        ["git", "commit", "-F", "-"], input=message, text=True
+        ["git", "commit", "-F", "-"], input=message, text=True,
+        encoding="utf-8", errors="replace",
     )
     sys.exit(res.returncode)
 
@@ -175,6 +179,13 @@ def edit_message(message):
 
 
 def main():
+    # Windows: console mặc định cp1252 -> ép UTF-8 để in/đọc không lỗi
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     argv = sys.argv[1:]
     if "-h" in argv or "--help" in argv:
         print(__doc__)
