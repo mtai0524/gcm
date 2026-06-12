@@ -9,6 +9,48 @@ Python thuần (chỉ stdlib, không cần `pip install`).
 
 # 1. Cài đặt
 
+### Bước 0 — Cài Python (nếu chưa có)
+
+Kiểm tra trước, nếu đã ra `Python 3.x.x` thì bỏ qua bước này:
+
+```bash
+python --version    # hoặc: py --version  (Windows)
+```
+
+<details>
+<summary><b>Windows</b></summary>
+
+```powershell
+winget install -e --id Python.Python.3.12
+```
+> Hoặc tải tại https://www.python.org/downloads/ — khi cài nhớ **tick "Add python.exe to PATH"**.
+
+Sau khi cài, **TẮT alias giả của Microsoft Store** (nếu không sẽ báo *"No installed Python found!"*):
+Settings → Apps → Advanced app settings → **App execution aliases** → tắt `python.exe` và `python3.exe`.
+Rồi **đóng hẳn và mở lại terminal**.
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+brew install python      # hoặc tải tại https://www.python.org/downloads/
+```
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
+
+```bash
+sudo apt install python3       # Debian/Ubuntu
+sudo dnf install python3       # Fedora
+```
+</details>
+
+---
+
+Đã có Python → cài gcm theo hệ điều hành:
+
 <details open>
 <summary><b>Linux / macOS / Git Bash</b></summary>
 
