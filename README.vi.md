@@ -71,17 +71,17 @@ gcm -h
 
 ## 2. Update
 
-Linux / macOS / **Git Bash**:
+Tiện nhất — để gcm tự cập nhật (mọi OS, khỏi nhớ đường dẫn):
 ```bash
-git -C ~/tools/gcm pull
+gcm -u
 ```
 
-Windows **PowerShell** (ở đây `~` không tự hiểu — phải dùng `$HOME`):
-```powershell
-git -C $HOME\tools\gcm pull
+Cách thủ công (`git pull` trong thư mục clone):
+```bash
+git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 ```
 
-Lệnh `gcm` trỏ vào thư mục clone nên `git pull` là xong, không cài lại.
+Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 
 ---
 
@@ -98,6 +98,7 @@ Lệnh `gcm` trỏ vào thư mục clone nên `git pull` là xong, không cài l
 | `gcm -a`         | `git add -A` rồi sinh |
 | `gcm -p`         | chỉ in message, không hỏi |
 | `gcm --model X`  | dùng model `X` (hoặc env `GCM_MODEL`) cho lần chạy này |
+| `gcm -u`         | cập nhật gcm lên bản mới nhất |
 | `gcm -h`         | trợ giúp |
 
 Sau khi sinh: `[Enter]` commit · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.

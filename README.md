@@ -71,17 +71,17 @@ gcm -h
 
 ## 2. Update
 
-Linux / macOS / **Git Bash**:
+Easiest — let gcm update itself (works on any OS, no path to remember):
 ```bash
-git -C ~/tools/gcm pull
+gcm -u
 ```
 
-Windows **PowerShell** (`~` is not expanded here — use `$HOME`):
-```powershell
-git -C $HOME\tools\gcm pull
+Manual fallback (`git pull` in the clone):
+```bash
+git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 ```
 
-`gcm` points at the cloned folder, so `git pull` is all you need — no reinstall.
+`gcm` points at the cloned folder, so pulling is all you need — no reinstall.
 
 ---
 
@@ -98,6 +98,7 @@ git -C $HOME\tools\gcm pull
 | `gcm -a`         | `git add -A` first, then generate |
 | `gcm -p`         | print message only (no prompt) |
 | `gcm --model X`  | use model `X` (or env `GCM_MODEL`) for this run |
+| `gcm -u`         | update gcm to the latest version |
 | `gcm -h`         | help |
 
 After generating: `[Enter]` commit · `[e]` edit · `[r]` regenerate · `[n]` cancel.
