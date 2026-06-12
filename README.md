@@ -3,32 +3,36 @@
 Tool CLI sinh git commit message tự động từ thay đổi đã `git add`, dùng Groq API (free).
 Python thuần (chỉ stdlib, không cần `pip install`).
 
-## Yêu cầu
-
-- **Python 3.7+** (kiểm tra: `python --version` hoặc `py --version`)
-- **Groq API key** (free): lấy tại https://console.groq.com/keys
+**Yêu cầu:** Python 3.7+ · Groq API key (free) tại https://console.groq.com/keys
 
 ---
 
-## Cài đặt trên Linux / macOS
+# 1. Cài đặt
+
+<details open>
+<summary><b>Linux / macOS / Git Bash</b></summary>
 
 ```bash
 git clone https://github.com/mtai0524/gcm.git ~/tools/gcm
 bash ~/tools/gcm/install.sh
 ```
 
-`install.sh` tự lo: tạo lệnh `gcm` trong `~/.local/bin`, thêm PATH nếu thiếu, và hỏi/lưu API key.
+`install.sh` tự lo hết: tạo lệnh `gcm` trong `~/.local/bin`, thêm vào PATH nếu thiếu,
+dò Python (`py`/`python`) trên Windows, và hỏi/lưu API key.
 
----
+Mở terminal mới rồi kiểm tra:
+```bash
+gcm -h
+```
+</details>
 
-## Cài đặt trên Windows
+<details>
+<summary><b>Windows — PowerShell</b> (terminal mặc định của VSCode)</summary>
 
-> ⚠️ Trong **PowerShell**, `gcm` là lệnh có sẵn (alias của `Get-Command`). Cần đè nó
-> bằng một function trong `$PROFILE` (xem bên dưới). Trong **Git Bash** thì không bị trùng.
+> ⚠️ Trong PowerShell, `gcm` là alias có sẵn của `Get-Command`. Phải đè bằng một
+> function trong `$PROFILE`.
 
-### Cách A — PowerShell (terminal mặc định của VSCode)
-
-**1. Tải tool về:**
+**1. Tải tool:**
 ```powershell
 git clone https://github.com/mtai0524/gcm.git $HOME\tools\gcm
 ```
@@ -39,7 +43,7 @@ New-Item -ItemType Directory -Force -Path $HOME\.config\gcm | Out-Null
 "gsk_..." | Out-File -Encoding ascii -NoNewline $HOME\.config\gcm\config
 ```
 
-**3. Thêm lệnh `gcm` vào PowerShell `$PROFILE` (đè alias Get-Command):**
+**3. Thêm lệnh `gcm` vào `$PROFILE` (đè alias):**
 ```powershell
 if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
 Add-Content $PROFILE @'
@@ -49,28 +53,27 @@ if (Test-Path Alias:gcm) { Remove-Item Alias:gcm -Force }
 function gcm { py "$HOME\tools\gcm\gcm" @args }
 '@
 ```
-> Nếu `py` không chạy được, đổi `py` thành `python` trong dòng `function gcm`.
+> Nếu `py` không chạy, đổi `py` → `python` trong dòng `function gcm`.
 
-**4. Nạp lại profile (hoặc mở terminal mới):**
+**4. Nạp lại profile và kiểm tra:**
 ```powershell
 . $PROFILE
-```
-
-**5. Kiểm tra:**
-```powershell
 gcm -h
 ```
+</details>
 
-### Cách B — Git Bash
+### Cấu hình API key
 
+Tool đọc key theo thứ tự:
+1. Biến môi trường `GROQ_API_KEY`
+2. File `~/.config/gcm/config` (Windows: `%USERPROFILE%\.config\gcm\config`) — chỉ cần 1 dòng là key `gsk_...`
+
+`install.sh` sẽ hỏi key khi cài. Cấu hình thủ công sau:
 ```bash
-git clone https://github.com/mtai0524/gcm.git ~/tools/gcm
-bash ~/tools/gcm/install.sh
+echo "gsk_..." > ~/.config/gcm/config
 ```
-`install.sh` tự dò Python (`py`/`python`), tạo wrapper `gcm`, thêm PATH và hỏi API key.
-Đóng/mở lại Git Bash rồi chạy `gcm -h`.
 
-### Nếu báo "không tìm thấy Python"
+### Lỗi "không tìm thấy Python" (Windows)
 
 Windows có alias giả của Microsoft Store chen vào. Vào **Settings → Apps →
 Advanced app settings → App execution aliases** → **TẮT** `python.exe` và `python3.exe`,
@@ -78,40 +81,9 @@ rồi mở lại terminal.
 
 ---
 
-## Cách dùng
+# 2. Update
 
-```bash
-git add .     # stage thay đổi
-gcm           # message tiếng Anh (Conventional Commits) + hỏi commit
-gcm -s        # chọn file để stage (interactive) rồi sinh message
-gcm --vi      # message tiếng Việt
-gcm -a        # tự git add -A rồi sinh
-gcm -p        # chỉ in message, không hỏi (tiện copy / nối lệnh)
-gcm -h        # trợ giúp
-```
-
-Sau khi sinh, tool hỏi: `[Enter]` commit luôn / `[e]` mở editor sửa / `[n]` hủy.
-
-### Chọn file để stage (`-s`)
-
-Không cần `git add` thủ công. Chạy `gcm -s` (hoặc chỉ `gcm` khi chưa stage gì —
-tool tự mở bộ chọn) để hiện danh sách file thay đổi:
-
-```
-Chọn file để stage:
-  ●  1. added     src/app.py      ● = đã stage, ○ = chưa
-  ○  2. modified  README.md
-  ○  3. new       test/new.py
-  Nhập số ('1 3', '1-3'), 'a' = tất cả, Enter = giữ nguyên, 'q' = hủy
-```
-
-Nhập số theo nhiều cú pháp: `1 3` (rời), `1-3` (khoảng), `a` (tất cả).
-
----
-
-## Cập nhật phiên bản mới
-
-Tool ở cả 2 OS đều trỏ vào thư mục đã clone, nên chỉ cần `git pull`:
+Lệnh `gcm` ở cả 2 OS đều trỏ vào thư mục đã clone, nên chỉ cần `git pull` — không cần cài lại:
 
 ```bash
 # Linux / macOS / Git Bash
@@ -122,24 +94,37 @@ git -C ~/tools/gcm pull
 git -C $HOME\tools\gcm pull
 ```
 
-Không cần cài lại — lệnh `gcm` tự dùng bản mới.
-
 ---
 
-## Cấu hình API key (chi tiết)
+## Cách dùng (tham khảo nhanh)
 
-Tool đọc key theo thứ tự:
-1. Biến môi trường `GROQ_API_KEY`
-2. File `~/.config/gcm/config` (Windows: `%USERPROFILE%\.config\gcm\config`)
+```bash
+git add .     # stage thay đổi (hoặc dùng -s bên dưới)
+gcm           # message tiếng Anh (Conventional Commits) + hỏi commit
+gcm -s        # chọn file để stage (interactive) rồi sinh message
+gcm --vi      # message tiếng Việt
+gcm -a        # tự git add -A rồi sinh
+gcm -p        # chỉ in message, không hỏi (tiện copy / nối lệnh)
+gcm -h        # trợ giúp
+```
 
-File config chỉ cần 1 dòng là key (`gsk_...`).
+Sau khi sinh: `[Enter]` commit luôn / `[e]` mở editor sửa / `[n]` hủy.
 
----
+Chạy `gcm -s` (hoặc `gcm` khi chưa stage gì) để chọn file ngay trong tool:
+```
+Chọn file để stage:
+  ●  1. added     src/app.py      ● = đã stage, ○ = chưa
+  ○  2. modified  README.md
+  ○  3. new       test/new.py
+  Nhập số ('1 3', '1-3'), 'a' = tất cả, Enter = giữ nguyên, 'q' = hủy
+```
 
 ## Ghi chú kỹ thuật
 
 - Endpoint: Groq `/openai/v1/chat/completions`, model `llama-3.3-70b-versatile`.
-- Request bắt buộc có header `User-Agent`, nếu thiếu Cloudflare chặn 403 (error 1010).
+- Request bắt buộc có header `User-Agent`, thiếu là Cloudflare chặn 403 (error 1010).
 - Đọc output `git` và in console đều ép UTF-8 (`errors=replace`) để không lỗi trên
   console Windows (cp1252) khi diff chứa ký tự tiếng Việt.
 - Diff > 12000 ký tự sẽ bị cắt bớt trước khi gửi.
+</content>
+</invoke>
