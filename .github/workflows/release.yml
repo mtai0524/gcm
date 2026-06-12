@@ -56,7 +56,7 @@ jobs:
       - name: Build MSI
         shell: bash
         run: |
-          wix build packaging/windows/gcm.wxs -d Version=${{ steps.ver.outputs.version }} -o gcm-${{ steps.ver.outputs.version }}.msi
+          wix build -arch x64 packaging/windows/gcm.wxs -d Version=${{ steps.ver.outputs.version }} -o gcm-${{ steps.ver.outputs.version }}.msi
 
       - name: Create GitHub Release
         if: github.ref_type == 'tag'

@@ -66,7 +66,7 @@ if ($env:PATH -notlike "*$toolsDir*") { $env:PATH = "$env:PATH;$toolsDir" }
 # 7. Dong goi MSI
 $Msi = "gcm-$Version.msi"
 Write-Host "==> Build $Msi..."
-wix build packaging\windows\gcm.wxs -d Version=$Version -o $Msi
+wix build -arch x64 packaging\windows\gcm.wxs -d Version=$Version -o $Msi
 
 # 8. Don dep san pham build trung gian (giu lai file .msi)
 Remove-Item -Recurse -Force build, dist, gcm.spec, gcm_entry.py -ErrorAction SilentlyContinue
