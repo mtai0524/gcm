@@ -6,7 +6,8 @@ prints it and lets you commit. No paid API needed (Groq free tier).
 
 Usage:
   gcm                Generate message and ask to commit
-  gcm -s             Chon file de stage (interactive) roi generate
+  gcm -s             Chon file de stage (nhap so) roi generate
+  gcm -t             Chon file kieu TUI (mui ten + space) roi generate
   gcm -a             git add -A first, then generate
   gcm -m "hint"      Them ngu canh/goi y cho message
   gcm -y             Commit luon, khong hoi
@@ -180,6 +181,113 @@ def select_files(default_all=False):
         err("khong chon file nao hop le.")
         sys.exit(1)
     paths = [items[i - 1][1] for i in sel]
+    run_git(["add", "--"] + paths)
+    print(c(f"da stage {len(paths)} file.", "32"))
+    return True
+
+
+def tui_supported():
+    """TUI cần stdin/stdout là tty và có module đọc phím raw."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    try:
+        if os.name == "nt":
+            import msvcrt  # noqa: F401
+        else:
+            import termios, tty  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _map_key(ch):
+    if ch in ("\r", "\n"):
+        return "enter"
+    if ch == " ":
+        return "space"
+    if ch in ("k", "K"):
+        return "up"
+    if ch in ("j", "J"):
+        return "down"
+    if ch in ("a", "A"):
+        return "all"
+    if ch in ("q", "Q", "\x03", "\x1b"):
+        return "quit"
+    return ""
+
+
+def read_key():
+    """Đọc 1 phím, trả token: up/down/space/enter/all/quit hoặc ''."""
+    if os.name == "nt":
+        import msvcrt
+        ch = msvcrt.getch()
+        if ch in (b"\x00", b"\xe0"):  # phím mũi tên: prefix rồi mã
+            return {b"H": "up", b"P": "down"}.get(msvcrt.getch(), "")
+        return _map_key(ch.decode("latin-1", "ignore"))
+    import termios, tty
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":  # ESC hoặc chuỗi mũi tên \x1b[A
+            seq = sys.stdin.read(2)
+            return {"[A": "up", "[B": "down"}.get(seq, "quit")
+        return _map_key(ch)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def tui_select(default_all=False):
+    """Bộ chọn file kiểu TUI: ↑↓ di chuyển, space chọn, a tất cả, enter xong."""
+    items = changed_files()
+    if not items:
+        return False
+    n = len(items)
+    selected = {i for i, (code, _) in enumerate(items) if code[0] not in " ?"}
+    if default_all and not selected:
+        selected = set(range(n))
+    cursor = 0
+    rendered = 0
+
+    def draw():
+        nonlocal rendered
+        if rendered:
+            sys.stdout.write(f"\033[{rendered}A")  # quay lên đầu khối
+        lines = [c(
+            "Chon file de stage  "
+            "(↑↓ di chuyen . space chon . a tat ca . enter xong . q huy)",
+            "1",
+        )]
+        for i, (code, path) in enumerate(items):
+            box = c("[x]", "32") if i in selected else "[ ]"
+            pointer = c(">", "36") if i == cursor else " "
+            lines.append(f" {pointer} {box} {status_label(code)} {path}")
+        sys.stdout.write("\n".join("\033[2K" + ln for ln in lines) + "\n")
+        sys.stdout.flush()
+        rendered = len(lines)
+
+    while True:
+        draw()
+        key = read_key()
+        if key == "up":
+            cursor = (cursor - 1) % n
+        elif key == "down":
+            cursor = (cursor + 1) % n
+        elif key == "space":
+            selected ^= {cursor}
+        elif key == "all":
+            selected = set() if len(selected) == n else set(range(n))
+        elif key == "enter":
+            break
+        elif key == "quit":
+            print("Da huy.")
+            sys.exit(0)
+
+    if not selected:
+        err("khong chon file nao.")
+        sys.exit(1)
+    paths = [items[i][1] for i in sorted(selected)]
     run_git(["add", "--"] + paths)
     print(c(f"da stage {len(paths)} file.", "32"))
     return True
@@ -370,16 +478,29 @@ def main():
     vietnamese = "--vi" in argv
     add_all = "-a" in argv or "--all" in argv
     select = "-s" in argv or "--select" in argv
+    tui = "-t" in argv or "--tui" in argv
     auto_yes = "-y" in argv or "--yes" in argv
     amend = "--amend" in argv
     model = model_override or MODEL
 
     ensure_repo()
 
+    def pick(default_all=False):
+        """Chọn file: TUI nếu -t và hỗ trợ được, ngược lại chế độ nhập số."""
+        if tui and tui_supported():
+            try:
+                return tui_select(default_all)
+            except (OSError, ImportError):
+                print(c("(TUI loi, chuyen sang nhap so)", "90"), file=sys.stderr)
+        elif tui:
+            print(c("(terminal khong ho tro TUI, dung nhap so)", "90"),
+                  file=sys.stderr)
+        return select_files(default_all)
+
     if add_all:
         run_git(["add", "-A"])
-    elif select:
-        select_files()
+    elif tui or select:
+        pick()
 
     def load_staged():
         d = run_git(["diff", "--staged"])
@@ -410,7 +531,7 @@ def main():
             err("chua stage thay doi nao. Dung `git add` hoac `gcm -a`.")
             sys.exit(1)
         else:
-            select_files(default_all=True)
+            pick(default_all=True)
             diff, files = load_staged()
             if not diff.strip():
                 err("chua co file nao duoc stage.")

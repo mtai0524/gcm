@@ -90,7 +90,8 @@ git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 | Command | |
 |---------|--|
 | `gcm`            | generate message (English) + ask to commit |
-| `gcm -s`         | pick files to stage, then generate |
+| `gcm -s`         | pick files to stage by number, then generate |
+| `gcm -t`         | pick files in a TUI (↑↓ + space), then generate |
 | `gcm -m "hint"`  | give the model extra context |
 | `gcm -y`         | commit immediately, no prompt |
 | `gcm --amend`    | reword the last commit |
