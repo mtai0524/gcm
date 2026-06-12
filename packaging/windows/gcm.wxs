@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="gcm"
+      Manufacturer="devduide"
+      Version="$(Version)"
+      UpgradeCode="86B66A85-F6A0-4061-AE53-8F52B10FC1BD"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of gcm is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Thong tin hien trong Add/Remove Programs -->
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/mtai0524/gcm" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/mtai0524/gcm" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="gcm">
+        <Component Id="GcmExe" Bitness="always64">
+          <File Id="GcmExeFile" Source="dist/gcm.exe" KeyPath="yes" />
+        </Component>
+        <Component Id="GcmPath" Guid="ABB8F2A6-399B-4846-A72C-259FDCAB3A06" Bitness="always64">
+          <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]"
+                       Part="last" Action="set" System="yes" Permanent="no" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="gcm" Level="1">
+      <ComponentRef Id="GcmExe" />
+      <ComponentRef Id="GcmPath" />
+    </Feature>
+  </Package>
+</Wix>
