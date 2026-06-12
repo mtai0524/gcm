@@ -6,23 +6,23 @@ prints it and lets you commit. No paid API needed (Groq free tier).
 
 Usage:
   gcm                Generate message and ask to commit
-  gcm -s             Chọn file để stage (interactive) rồi generate
+  gcm -s             Chon file de stage (interactive) roi generate
   gcm -a             git add -A first, then generate
-  gcm -m "hint"      Thêm ngữ cảnh/gợi ý cho message
-  gcm -y             Commit luôn, không hỏi
-  gcm --amend        Sửa (reword) commit gần nhất
+  gcm -m "hint"      Them ngu canh/goi y cho message
+  gcm -y             Commit luon, khong hoi
+  gcm --amend        Sua (reword) commit gan nhat
   gcm --vi           Vietnamese commit message (default: English)
   gcm -p             Print message only (no prompt)
-  gcm --model NAME   Đổi model cho lần chạy này
+  gcm --model NAME   Doi model cho lan chay nay
   gcm -h             Show help
 
-Khi review: [Enter] commit · [e] sửa · [r] tạo lại · [n] hủy.
-Nếu chưa stage gì mà working tree có thay đổi, gcm tự mở bộ chọn file.
+Khi review: [Enter] commit . [e] sua . [r] tao lai . [n] huy.
+Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
 
 Config:
-  GROQ_API_KEY   API key (hoặc file ~/.config/gcm/config)
-  GCM_MODEL      Đổi model mặc định (mặc định: llama-3.3-70b-versatile)
-  Lấy key free tại https://console.groq.com/keys
+  GROQ_API_KEY   API key (hoac file ~/.config/gcm/config)
+  GCM_MODEL      Doi model mac dinh (mac dinh: llama-3.3-70b-versatile)
+  Lay key free tai https://console.groq.com/keys
 """
 import json
 import os
@@ -35,7 +35,7 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = os.environ.get("GCM_MODEL", "llama-3.3-70b-versatile")
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
-REPO_ROOT = None  # gốc repo, set sau khi xác nhận đang trong git repo
+REPO_ROOT = None
 
 
 # ---- small terminal color helpers ----
@@ -55,7 +55,7 @@ def run_git(args, check=True):
         ["git"] + args,
         capture_output=True, text=True,
         encoding="utf-8", errors="replace",
-        cwd=REPO_ROOT,  # luôn chạy từ gốc repo (path porcelain là root-relative)
+        cwd=REPO_ROOT,
     )
     if check and res.returncode != 0:
         err(res.stderr.strip() or f"git {' '.join(args)} failed")
@@ -72,15 +72,14 @@ def get_api_key():
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    # accept "KEY" or "GROQ_API_KEY=KEY"
                     return line.split("=", 1)[-1].strip()
     err("no Groq API key found.")
     print(
-        "  Lấy key free tại: " + c("https://console.groq.com/keys", "36"),
+        "  Lay key free tai: " + c("https://console.groq.com/keys", "36"),
         file=sys.stderr,
     )
-    print("  Rồi chạy một trong hai cách:", file=sys.stderr)
-    print('    export GROQ_API_KEY="gsk_..."   (thêm vào ~/.bashrc)', file=sys.stderr)
+    print("  Roi chay mot trong hai cach:", file=sys.stderr)
+    print('    export GROQ_API_KEY="gsk_..."   (them vao ~/.bashrc)', file=sys.stderr)
     print(f'    echo "gsk_..." > {CONFIG_PATH}', file=sys.stderr)
     sys.exit(1)
 
@@ -94,35 +93,28 @@ def ensure_repo():
     )
     lines = res.stdout.splitlines()
     if res.returncode != 0 or not lines or lines[0].strip() != "true":
-        err("không phải git repository (chạy trong thư mục repo).")
+        err("khong phai git repository (chay trong thu muc repo).")
         sys.exit(1)
-    # dòng 2 là đường dẫn gốc repo -> mọi lệnh git sau đều chạy từ đây
     REPO_ROOT = lines[1].strip() if len(lines) > 1 else None
 
 
 def changed_files():
-    """Trả về list (code, path) các file có thay đổi (git status porcelain).
-
-    Dùng -uall để folder mới được liệt kê thành từng file thay vì gộp 'folder/'.
-    """
     items = []
     for line in run_git(["status", "--porcelain", "-uall"]).splitlines():
         if not line.strip():
             continue
         code = line[:2]
         rest = line[3:]
-        if " -> " in rest:  # rename: lấy tên mới
+        if " -> " in rest:
             rest = rest.split(" -> ", 1)[1]
         rest = rest.strip()
         if len(rest) >= 2 and rest[0] == '"' and rest[-1] == '"':
-            # git bọc nháy cho path có ký tự đặc biệt
             rest = rest[1:-1].encode().decode("unicode_escape")
         items.append((code, rest))
     return items
 
 
 def status_label(code):
-    """Nhãn trạng thái ngắn, có màu, từ 2 ký tự porcelain."""
     if code == "??":
         return c("new      ", "36")
     flags = code.replace(" ", "")
@@ -138,7 +130,6 @@ def status_label(code):
 
 
 def parse_selection(raw, n):
-    """Parse '1 3', '1-3', '2,4' -> list số thứ tự hợp lệ (1..n)."""
     chosen = set()
     for tok in raw.replace(",", " ").split():
         if "-" in tok:
@@ -155,23 +146,18 @@ def parse_selection(raw, n):
 
 
 def select_files(default_all=False):
-    """Hiện danh sách file thay đổi, cho chọn để git add. True nếu đã stage.
-
-    default_all=True: Enter (để trống) = stage tất cả (tiện khi tự bật picker).
-    Ngược lại Enter = giữ nguyên staging hiện tại.
-    """
     items = changed_files()
     if not items:
         return False
     n = len(items)
-    print(c(f"Chọn file để stage ({n} thay đổi):", "1"))
+    print(c(f"Chon file de stage ({n} thay doi):", "1"))
     for i, (code, path) in enumerate(items, 1):
         staged = code[0] not in " ?"
-        mark = c("●", "32") if staged else c("○", "90")
+        mark = c("\u25cf", "32") if staged else c("\u25cb", "90")
         print(f"  {mark} {c(str(i).rjust(2) + '.', '1')} {status_label(code)} {path}")
-    enter_hint = "Enter = tất cả" if default_all else "Enter = giữ nguyên"
+    enter_hint = "Enter = tat ca" if default_all else "Enter = giu nguyen"
     print(c(
-        f"  số ('1 3', '1-3') · 'a' tất cả · {enter_hint} · 'q' hủy",
+        f"  so ('1 3', '1-3') . 'a' tat ca . {enter_hint} . 'q' huy",
         "90",
     ))
     try:
@@ -181,26 +167,26 @@ def select_files(default_all=False):
         sys.exit(1)
 
     if raw in ("q", "quit", "n"):
-        print("Đã hủy.")
+        print("Da huy.")
         sys.exit(0)
     if raw == "" and not default_all:
-        return False  # giữ nguyên staging hiện tại
+        return False
     if raw in ("a", "all") or (raw == "" and default_all):
         sel = list(range(1, n + 1))
     else:
         sel = parse_selection(raw, n)
     if not sel:
-        err("không chọn file nào hợp lệ.")
+        err("khong chon file nao hop le.")
         sys.exit(1)
     paths = [items[i - 1][1] for i in sel]
     run_git(["add", "--"] + paths)
-    print(c(f"đã stage {len(paths)} file.", "32"))
+    print(c(f"da stage {len(paths)} file.", "32"))
     return True
 
 
 def build_prompt(diff, files, vietnamese, hint=None):
     lang = (
-        "Viết bằng TIẾNG VIỆT." if vietnamese
+        "Viet bang TIENG VIET." if vietnamese
         else "Write in ENGLISH."
     )
     files_list = "\n".join(files) if files else "(unknown)"
@@ -210,23 +196,39 @@ def build_prompt(diff, files, vietnamese, hint=None):
         "type(scope): short summary in imperative mood. "
         "Allowed types: feat, fix, docs, style, refactor, perf, test, "
         "build, ci, chore, revert. "
-        "The summary line (lowercase after the colon, no trailing period) must "
-        "cover the MAIN changes, not just one. When the diff does several "
-        "significant things, string them together concisely in the summary "
-        "(e.g. 'update width and drop Height/Lib/Id params') instead of naming "
-        "only one. Keep it readable: aim for <= 72 chars, but you may go a "
-        "little longer when needed to cover the key changes. "
+        # ---- summary line rules ----
+        "IMPORTANT - summary line rules: "
+        "Read the ENTIRE diff before writing the summary. "
+        "Identify ALL distinct, significant changes in the diff. "
+        "The summary MUST mention every significant change with SPECIFIC "
+        "detail - include old->new values where applicable, and name each "
+        "removed/added prop, param, or file by its ACTUAL identifier. "
+        "Do NOT collapse multiple distinct changes into a vague group "
+        "(e.g. NEVER write 'remove X params' when you mean "
+        "'remove Height/HeightPx props, drop Lib param, and remove "
+        "default Guid-based Id generation'). "
+        "String all changes together with 'and' or commas. "
+        "GOOD example: "
+        "'update width from 100% to 120%, remove Height/HeightPx props, "
+        "drop Lib param, and remove default Guid-based Id generation'. "
+        "BAD example (too vague, collapses details): "
+        "'update width to 120% and remove Height, Lib, Id params'. "
+        "Prefer a longer, fully descriptive summary (up to 120 chars) "
+        "over a short one that omits or collapses important details. "
+        "Never write a summary covering only one change when the diff "
+        "clearly contains multiple independent changes. "
+        # ---- body rules ----
         "Then add a blank line and a DETAILED body of 2-5 bullets (each "
-        "starting with '- ') describing the concrete sub-changes in the diff. "
-        "Every bullet must be SPECIFIC and grounded in the actual diff: name "
-        "the component, function, file, prop or value involved and state what "
-        "exactly changed (e.g. old -> new value) or why it was needed. "
-        "Cover the meaningful changes, not just one. "
-        "Do NOT invent changes that are not in the diff, do NOT restate the "
-        "summary, and do NOT pad with vague filler like 'for better "
-        "visibility', 'for simplicity', 'for readability', 'improve user "
-        "experience' unless tied to a concrete, real reason. "
-        "Omit the body only for a truly trivial one-line change (typo, bump). "
+        "starting with '- ') describing the concrete sub-changes. "
+        "Every bullet must be SPECIFIC: name the component, function, "
+        "file, prop or value and state exactly what changed "
+        "(e.g. old -> new value, or why it was removed). "
+        "Cover all meaningful changes, not just one. "
+        "Do NOT invent changes absent from the diff, do NOT restate the "
+        "summary verbatim, and do NOT pad with vague filler like "
+        "'for better readability' or 'improve UX' unless tied to a "
+        "concrete reason visible in the diff. "
+        "Omit the body only for a truly trivial one-liner (typo, bump). "
         f"{lang} "
         "Output ONLY the commit message, no markdown fences, no preamble."
     )
@@ -270,14 +272,13 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
         err(f"Groq API HTTP {e.code}: {detail[:300]}")
         sys.exit(1)
     except urllib.error.URLError as e:
-        err(f"lỗi mạng: {e.reason}")
+        err(f"loi mang: {e.reason}")
         sys.exit(1)
     try:
         msg = body["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError):
-        err("phản hồi API không hợp lệ: " + json.dumps(body)[:300])
+        err("phan hoi API khong hop le: " + json.dumps(body)[:300])
         sys.exit(1)
-    # strip accidental code fences
     if msg.startswith("```"):
         lines = msg.splitlines()
         lines = [ln for ln in lines if not ln.strip().startswith("```")]
@@ -298,10 +299,6 @@ def commit_with_message(message, amend=False):
 
 
 def take_value(argv, *names):
-    """Tách option có giá trị ('-m hint' hoặc '--hint=hint').
-
-    Trả về (value | None, argv_còn_lại).
-    """
     value, rest, i = None, [], 0
     while i < len(argv):
         a = argv[i]
@@ -336,7 +333,6 @@ def edit_message(message):
 
 
 def main():
-    # Windows: console mặc định cp1252 -> ép UTF-8 để in/đọc không lỗi
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
@@ -377,7 +373,6 @@ def main():
     if not diff.strip():
         status = run_git(["status", "--porcelain"]).strip()
         if amend:
-            # reword commit gần nhất: dùng diff của chính commit đó làm ngữ cảnh
             diff = run_git(["show", "--format=", "HEAD"])
             files = [
                 ln for ln in
@@ -385,20 +380,19 @@ def main():
                 if ln.strip()
             ]
             if not diff.strip():
-                err("không có commit nào để --amend.")
+                err("khong co commit nao de --amend.")
                 sys.exit(1)
         elif not status:
             err("nothing to commit (working tree clean).")
             sys.exit(1)
         elif print_only:
-            err("chưa stage thay đổi nào. Dùng `git add` hoặc `gcm -a`.")
+            err("chua stage thay doi nao. Dung `git add` hoac `gcm -a`.")
             sys.exit(1)
         else:
-            # tự mở bộ chọn file thay vì báo lỗi (Enter = stage tất cả)
             select_files(default_all=True)
             diff, files = load_staged()
             if not diff.strip():
-                err("chưa có file nào được stage.")
+                err("chua co file nao duoc stage.")
                 sys.exit(1)
 
     api_key = get_api_key()
@@ -409,7 +403,7 @@ def main():
 
     def generate(temperature):
         if not print_only:
-            print(c("Đang sinh commit message...", "90"), file=sys.stderr)
+            print(c("Dang sinh commit message...", "90"), file=sys.stderr)
         system, user = build_prompt(diff, files, vietnamese, hint)
         return call_groq(api_key, system, user, model, temperature)
 
@@ -421,22 +415,22 @@ def main():
 
     if auto_yes:
         commit_with_message(message, amend)
-        return  # commit_with_message gọi sys.exit
+        return
 
     temperature = 0.3
     while True:
         print()
-        print(c("─" * 60, "90"))
+        print(c("-" * 60, "90"))
         print(c(message, "32"))
-        print(c("─" * 60, "90"))
+        print(c("-" * 60, "90"))
         if truncated:
-            print(c("(diff lớn nên đã được cắt bớt khi gửi)", "90"))
+            print(c("(diff lon nen da duoc cat bot khi gui)", "90"))
 
         prompt = (
             c("[Enter]", "1") + (" amend  " if amend else " commit  ")
-            + c("[e]", "1") + " sửa  "
-            + c("[r]", "1") + " tạo lại  "
-            + c("[n]", "1") + " hủy: "
+            + c("[e]", "1") + " sua  "
+            + c("[r]", "1") + " tao lai  "
+            + c("[n]", "1") + " huy: "
         )
         try:
             choice = input(prompt).strip().lower()
@@ -445,7 +439,7 @@ def main():
             sys.exit(1)
 
         if choice == "n":
-            print("Đã hủy.")
+            print("Da huy.")
             sys.exit(0)
         if choice == "r":
             temperature = min(temperature + 0.3, 1.0)
@@ -454,7 +448,7 @@ def main():
         if choice == "e":
             message = edit_message(message)
             if not message:
-                err("message rỗng, đã hủy.")
+                err("message rong, da huy.")
                 sys.exit(1)
         break
 
