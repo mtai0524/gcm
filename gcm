@@ -14,6 +14,7 @@ Usage:
   gcm --vi           Vietnamese commit message (default: English)
   gcm -p             Print message only (no prompt)
   gcm --model NAME   Doi model cho lan chay nay
+  gcm -u             Tu cap nhat gcm len ban moi nhat (git pull)
   gcm -h             Show help
 
 Khi review: [Enter] commit . [e] sua . [r] tao lai . [n] huy.
@@ -332,6 +333,24 @@ def edit_message(message):
     return edited
 
 
+def self_update():
+    """git pull trong thư mục cài gcm để lấy bản mới nhất."""
+    src_dir = os.path.dirname(os.path.realpath(__file__))
+    print(c(f"Cap nhat gcm tai {src_dir} ...", "90"), file=sys.stderr)
+    res = subprocess.run(
+        ["git", "-C", src_dir, "pull", "--ff-only"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    out = (res.stdout + res.stderr).strip()
+    if out:
+        print(out)
+    if res.returncode != 0:
+        err(f'cap nhat that bai. Thu thu cong: git -C "{src_dir}" pull')
+        sys.exit(1)
+    print(c("gcm da o ban moi nhat.", "32"))
+    sys.exit(0)
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -343,6 +362,8 @@ def main():
     if "-h" in argv or "--help" in argv:
         print(__doc__)
         return
+    if "-u" in argv or "--update" in argv or (argv and argv[0] == "update"):
+        self_update()
     hint, argv = take_value(argv, "-m", "--hint")
     model_override, argv = take_value(argv, "--model")
     print_only = "-p" in argv or "--print" in argv
