@@ -6,10 +6,13 @@ prints it and lets you commit. No paid API needed (Groq free tier).
 
 Usage:
   gcm            Generate message and ask to commit
+  gcm -s         Chọn file để stage (interactive) rồi generate
   gcm -p         Print message only (no prompt)
   gcm -a         git add -A first, then generate
   gcm --vi       Vietnamese commit message (default: English)
   gcm -h         Show help
+
+Nếu chưa stage gì mà working tree có thay đổi, gcm tự mở bộ chọn file.
 
 Config:
   Set GROQ_API_KEY env var, or put the key in ~/.config/gcm/config
@@ -83,6 +86,95 @@ def ensure_repo():
     if res.returncode != 0 or res.stdout.strip() != "true":
         err("không phải git repository (chạy trong thư mục repo).")
         sys.exit(1)
+
+
+def changed_files():
+    """Trả về list (code, path) các file có thay đổi (git status porcelain)."""
+    items = []
+    for line in run_git(["status", "--porcelain"]).splitlines():
+        if not line.strip():
+            continue
+        code = line[:2]
+        rest = line[3:]
+        if " -> " in rest:  # rename: lấy tên mới
+            rest = rest.split(" -> ", 1)[1]
+        rest = rest.strip()
+        if len(rest) >= 2 and rest[0] == '"' and rest[-1] == '"':
+            # git bọc nháy cho path có ký tự đặc biệt
+            rest = rest[1:-1].encode().decode("unicode_escape")
+        items.append((code, rest))
+    return items
+
+
+def status_label(code):
+    """Nhãn trạng thái ngắn, có màu, từ 2 ký tự porcelain."""
+    if code == "??":
+        return c("new      ", "36")
+    flags = code.replace(" ", "")
+    if "D" in flags:
+        return c("deleted  ", "31")
+    if "R" in flags:
+        return c("renamed  ", "35")
+    if "A" in flags:
+        return c("added    ", "32")
+    if "M" in flags:
+        return c("modified ", "33")
+    return c(code.ljust(9), "90")
+
+
+def parse_selection(raw, n):
+    """Parse '1 3', '1-3', '2,4' -> list số thứ tự hợp lệ (1..n)."""
+    chosen = set()
+    for tok in raw.replace(",", " ").split():
+        if "-" in tok:
+            a, _, b = tok.partition("-")
+            if a.isdigit() and b.isdigit():
+                for k in range(int(a), int(b) + 1):
+                    if 1 <= k <= n:
+                        chosen.add(k)
+        elif tok.isdigit():
+            k = int(tok)
+            if 1 <= k <= n:
+                chosen.add(k)
+    return sorted(chosen)
+
+
+def select_files():
+    """Hiện danh sách file thay đổi, cho chọn để git add. True nếu đã stage."""
+    items = changed_files()
+    if not items:
+        return False
+    print(c("Chọn file để stage:", "1"))
+    for i, (code, path) in enumerate(items, 1):
+        staged = code[0] not in " ?"
+        mark = c("●", "32") if staged else c("○", "90")
+        print(f"  {mark} {c(str(i).rjust(2) + '.', '1')} {status_label(code)} {path}")
+    print(c(
+        "  Nhập số ('1 3', '1-3'), 'a' = tất cả, Enter = giữ nguyên, 'q' = hủy",
+        "90",
+    ))
+    try:
+        raw = input(c("> ", "1")).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(1)
+
+    if raw in ("q", "quit"):
+        print("Đã hủy.")
+        sys.exit(0)
+    if raw == "":
+        return False  # giữ nguyên staging hiện tại
+    sel = (
+        list(range(1, len(items) + 1)) if raw in ("a", "all")
+        else parse_selection(raw, len(items))
+    )
+    if not sel:
+        err("không chọn file nào hợp lệ.")
+        sys.exit(1)
+    paths = [items[i - 1][1] for i in sel]
+    run_git(["add", "--"] + paths)
+    print(c(f"đã stage {len(paths)} file.", "32"))
+    return True
 
 
 def build_prompt(diff, files, vietnamese):
@@ -193,26 +285,40 @@ def main():
     print_only = "-p" in argv or "--print" in argv
     vietnamese = "--vi" in argv
     add_all = "-a" in argv or "--all" in argv
+    select = "-s" in argv or "--select" in argv
 
     ensure_repo()
 
     if add_all:
         run_git(["add", "-A"])
+    elif select:
+        select_files()
 
-    diff = run_git(["diff", "--staged"])
-    files = [
-        ln for ln in run_git(["diff", "--staged", "--name-only"]).splitlines()
-        if ln.strip()
-    ]
+    def load_staged():
+        d = run_git(["diff", "--staged"])
+        fs = [
+            ln for ln in run_git(["diff", "--staged", "--name-only"]).splitlines()
+            if ln.strip()
+        ]
+        return d, fs
+
+    diff, files = load_staged()
 
     if not diff.strip():
-        # nothing staged - use status to detect unstaged/untracked changes
+        # chưa stage gì - kiểm tra có thay đổi nào chưa stage không
         status = run_git(["status", "--porcelain"]).strip()
-        if status:
-            err("chưa stage thay đổi nào. Dùng `git add` hoặc `gcm -a`.")
-        else:
+        if not status:
             err("nothing to commit (working tree clean).")
-        sys.exit(1)
+            sys.exit(1)
+        if print_only:
+            err("chưa stage thay đổi nào. Dùng `git add` hoặc `gcm -a`.")
+            sys.exit(1)
+        # tự mở bộ chọn file thay vì báo lỗi
+        select_files()
+        diff, files = load_staged()
+        if not diff.strip():
+            err("chưa có file nào được stage.")
+            sys.exit(1)
 
     api_key = get_api_key()
 
