@@ -89,20 +89,41 @@ git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 
 | Command | |
 |---------|--|
-| `gcm`            | generate message (English) + ask to commit |
+| `gcm`            | generate message + ask to commit |
 | `gcm -s`         | pick files to stage by number, then generate |
-| `gcm -t`         | pick files in a TUI (↑↓ + space), then generate |
+| `gcm -t`         | pick files in a TUI (↑↓ + space, `d` = view diff) |
 | `gcm -m "hint"`  | give the model extra context |
 | `gcm -y`         | commit immediately, no prompt |
+| `gcm --push`     | auto-push after commit |
 | `gcm --amend`    | reword the last commit |
-| `gcm --vi`       | message in Vietnamese |
+| `gcm --vi` / `--en` | message language for this run |
 | `gcm -a`         | `git add -A` first, then generate |
 | `gcm -p`         | print message only (no prompt) |
 | `gcm --model X`  | use model `X` (or env `GCM_MODEL`) for this run |
+| `gcm config`     | show current config |
 | `gcm -u`         | update gcm to the latest version |
-| `gcm -h`         | help |
+| `gcm -h` / `-v`  | help / version |
 
-After generating: `[Enter]` commit · `[e]` edit · `[r]` regenerate · `[n]` cancel.
+After generating: `[Enter]` commit · `[p]` commit+push · `[e]` edit · `[r]` regenerate · `[n]` cancel.
+The header shows your branch and unpushed commit count (`main ↑2`).
+
+**Smart diff:** lockfiles (`package-lock.json`, `yarn.lock`...), `*.min.js` and binary
+files are still committed but their content is not sent to the LLM; oversized files
+are summarized with `--stat` instead of being cut off mid-diff.
+
+### Config file (`~/.config/gcm/config`)
+
+Set defaults once, skip the flags (`key = value`, all optional):
+
+```ini
+api_key = gsk_...      # free: https://console.groq.com/keys
+lang = vi              # default message language
+model = llama-3.3-70b-versatile
+tui = true             # default to TUI file picker
+push = ask             # ask | always | never
+```
+
+CLI flags override config. Old single-line key files still work.
 
 `gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick by number:
 ```
@@ -114,8 +135,9 @@ Chọn file để stage (3 thay đổi):
 ```
 
 `gcm -t` opens a TUI instead — move with `↑↓` (or `j`/`k`), toggle with `Space`,
-`a` for all, `Enter` to confirm. Falls back to the numbered picker if the
-terminal doesn't support it (e.g. piped input).
+`d` to preview the diff of the highlighted file, `a` for all, `Enter` to confirm.
+Falls back to the numbered picker if the terminal doesn't support it (e.g. piped
+input). Set `tui = true` in the config to make it the default.
 
 <details>
 <summary>Technical notes</summary>

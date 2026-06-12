@@ -89,20 +89,41 @@ Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 
 | Lệnh | |
 |---------|--|
-| `gcm`            | sinh message (English) + hỏi commit |
+| `gcm`            | sinh message + hỏi commit |
 | `gcm -s`         | chọn file để stage bằng số rồi sinh |
-| `gcm -t`         | chọn file kiểu TUI (↑↓ + space) rồi sinh |
+| `gcm -t`         | chọn file kiểu TUI (↑↓ + space, `d` = xem diff) |
 | `gcm -m "gợi ý"` | truyền thêm ngữ cảnh cho model |
 | `gcm -y`         | commit luôn, không hỏi |
+| `gcm --push`     | tự push sau khi commit |
 | `gcm --amend`    | sửa (reword) commit gần nhất |
-| `gcm --vi`       | message tiếng Việt |
+| `gcm --vi` / `--en` | ngôn ngữ message cho lần chạy này |
 | `gcm -a`         | `git add -A` rồi sinh |
 | `gcm -p`         | chỉ in message, không hỏi |
 | `gcm --model X`  | dùng model `X` (hoặc env `GCM_MODEL`) cho lần chạy này |
+| `gcm config`     | xem config hiện tại |
 | `gcm -u`         | cập nhật gcm lên bản mới nhất |
-| `gcm -h`         | trợ giúp |
+| `gcm -h` / `-v`  | trợ giúp / version |
 
-Sau khi sinh: `[Enter]` commit · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
+Sau khi sinh: `[Enter]` commit · `[p]` commit+push · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
+Khung review hiện branch + số commit chưa push (`main ↑2`).
+
+**Smart diff:** lockfile (`package-lock.json`, `yarn.lock`...), `*.min.js`, file binary
+vẫn được commit nhưng không gửi nội dung cho LLM; file quá to được tóm tắt bằng
+`--stat` thay vì cắt cụt giữa chừng.
+
+### Config file (`~/.config/gcm/config`)
+
+Đặt mặc định một lần, khỏi gõ cờ (`key = value`, tất cả tùy chọn):
+
+```ini
+api_key = gsk_...      # key free: https://console.groq.com/keys
+lang = vi              # ngôn ngữ message mặc định
+model = llama-3.3-70b-versatile
+tui = true             # mặc định chọn file kiểu TUI
+push = ask             # ask | always | never
+```
+
+Cờ CLI luôn đè config. File cũ chỉ chứa 1 dòng key vẫn chạy bình thường.
 
 `gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn bằng số:
 ```
@@ -114,7 +135,8 @@ Chọn file để stage (3 thay đổi):
 ```
 
 `gcm -t` mở TUI thay vì nhập số — di chuyển `↑↓` (hoặc `j`/`k`), `Space` tick chọn,
-`a` tất cả, `Enter` xong. Tự về chế độ nhập số nếu terminal không hỗ trợ (vd pipe).
+`d` xem diff file đang trỏ, `a` tất cả, `Enter` xong. Tự về chế độ nhập số nếu
+terminal không hỗ trợ (vd pipe). Đặt `tui = true` trong config để thành mặc định.
 
 <details>
 <summary>Ghi chú kỹ thuật</summary>

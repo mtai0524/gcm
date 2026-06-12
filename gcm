@@ -1,30 +1,41 @@
 #!/usr/bin/env python3
 """gcm - Git Commit Message generator (free, via Groq API).
 
-Reads your staged changes, asks an LLM for a Conventional Commits message,
-prints it and lets you commit. No paid API needed (Groq free tier).
+Doc staged diff, nho LLM viet message Conventional Commits, review roi commit.
+Khong can API tra phi (Groq free tier). Thuan stdlib, khong can pip install.
 
-Usage:
-  gcm                Generate message and ask to commit
-  gcm -s             Chon file de stage (nhap so) roi generate
-  gcm -t             Chon file kieu TUI (mui ten + space) roi generate
-  gcm -a             git add -A first, then generate
+Staging:
+  gcm -s             Chon file de stage (nhap so)
+  gcm -t             Chon file kieu TUI (mui ten + space, 'd' xem diff)
+  gcm -a             git add -A truoc khi sinh
+
+Message:
   gcm -m "hint"      Them ngu canh/goi y cho message
-  gcm -y             Commit luon, khong hoi
-  gcm --amend        Sua (reword) commit gan nhat
-  gcm --vi           Vietnamese commit message (default: English)
-  gcm -p             Print message only (no prompt)
+  gcm --vi / --en    Message tieng Viet / English
   gcm --model NAME   Doi model cho lan chay nay
+
+Commit & push:
+  gcm -y             Commit luon, khong hoi
+  gcm --push         Tu push sau khi commit
+  gcm --amend        Sua (reword) commit gan nhat
+  gcm -p             Chi in message, khong commit
+
+Khac:
+  gcm config         Xem config hien tai
   gcm -u             Tu cap nhat gcm len ban moi nhat (git pull)
-  gcm -h             Show help
+  gcm -h             Tro giup
 
-Khi review: [Enter] commit . [e] sua . [r] tao lai . [n] huy.
+Khi review: [Enter] commit . [p] commit+push . [e] sua . [r] tao lai . [n] huy
 Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
+Lockfile/binary van duoc commit nhung khong gui noi dung cho LLM.
 
-Config:
-  GROQ_API_KEY   API key (hoac file ~/.config/gcm/config)
-  GCM_MODEL      Doi model mac dinh (mac dinh: llama-3.3-70b-versatile)
-  Lay key free tai https://console.groq.com/keys
+Config (~/.config/gcm/config, dang key = value):
+  api_key = gsk_...      key free tai https://console.groq.com/keys
+  lang = vi | en         ngon ngu mac dinh cua message
+  model = <ten model>    mac dinh: llama-3.3-70b-versatile
+  tui = true | false     mac dinh chon file kieu TUI
+  push = ask | always | never
+Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
 """
 import json
 import os
@@ -33,11 +44,68 @@ import sys
 import urllib.error
 import urllib.request
 
+VERSION = "2.0.0"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = os.environ.get("GCM_MODEL", "llama-3.3-70b-versatile")
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
+CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push")
 REPO_ROOT = None
+
+
+def load_config():
+    """Doc ~/.config/gcm/config dang 'key = value'.
+
+    Back-compat: dong khong co '=' (file cu chi chua key gsk_...) -> api_key.
+    Keys: api_key, lang (vi|en), model, tui (true|false), push (ask|always|never).
+    """
+    cfg = {}
+    if not os.path.exists(CONFIG_PATH):
+        return cfg
+    with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                k, _, v = line.partition("=")
+                k, v = k.strip().lower(), v.strip()
+                if k == "groq_api_key":  # ho tro format cu GROQ_API_KEY=...
+                    k = "api_key"
+                if k in CONFIG_KEYS and v:
+                    cfg[k] = v
+            else:
+                cfg["api_key"] = line  # file cu: 1 dong la key
+    return cfg
+
+
+def cfg_bool(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+CONFIG = load_config()
+MODEL = os.environ.get("GCM_MODEL") or CONFIG.get("model") or DEFAULT_MODEL
+
+
+def show_config():
+    """In config hien tai (che api_key) roi thoat."""
+    print(c("config: ", "1") + CONFIG_PATH)
+    if not os.path.exists(CONFIG_PATH):
+        print("  (chua co file config)")
+    for k in CONFIG_KEYS:
+        v = CONFIG.get(k)
+        if v is None:
+            continue
+        if k == "api_key" and len(v) > 8:
+            v = v[:7] + "..." + v[-4:]
+        print(f"  {k} = {v}")
+    print(c("vi du day du:", "90"))
+    print(c("  api_key = gsk_...", "90"))
+    print(c("  lang = vi          # mac dinh --vi", "90"))
+    print(c(f"  model = {DEFAULT_MODEL}", "90"))
+    print(c("  tui = true         # mac dinh chon file kieu TUI", "90"))
+    print(c("  push = ask         # ask | always | never", "90"))
+    sys.exit(0)
 
 
 # ---- small terminal color helpers ----
@@ -66,15 +134,9 @@ def run_git(args, check=True):
 
 
 def get_api_key():
-    key = os.environ.get("GROQ_API_KEY", "").strip()
+    key = os.environ.get("GROQ_API_KEY", "").strip() or CONFIG.get("api_key", "")
     if key:
         return key
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    return line.split("=", 1)[-1].strip()
     err("no Groq API key found.")
     print(
         "  Lay key free tai: " + c("https://console.groq.com/keys", "36"),
@@ -211,6 +273,8 @@ def _map_key(ch):
         return "down"
     if ch in ("a", "A"):
         return "all"
+    if ch in ("d", "D"):
+        return "diff"
     if ch in ("q", "Q", "\x03", "\x1b"):
         return "quit"
     return ""
@@ -238,12 +302,36 @@ def read_key():
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def show_file_diff(code, path, max_lines=40):
+    """In diff (co mau) cua 1 file trong picker; file moi thi in noi dung."""
+    print()
+    if code == "??":
+        try:
+            full = os.path.join(REPO_ROOT or ".", path)
+            with open(full, encoding="utf-8", errors="replace") as f:
+                body = f.read(8000)
+        except OSError as e:
+            body = f"(khong doc duoc: {e})"
+        print(c(f"--- {path} (file moi) ---", "1"))
+        lines = body.splitlines() or ["(file rong)"]
+    else:
+        d = run_git(["diff", "--color", "HEAD", "--", path], check=False)
+        print(c(f"--- diff {path} ---", "1"))
+        lines = d.rstrip().splitlines() or ["(khong co thay doi)"]
+    print("\n".join(lines[:max_lines]))
+    if len(lines) > max_lines:
+        print(c(f"... ({len(lines) - max_lines} dong nua)", "90"))
+    print(c("nhan phim bat ky de quay lai...", "90"))
+    read_key()
+
+
 def tui_select(default_all=False):
-    """Bộ chọn file kiểu TUI: ↑↓ di chuyển, space chọn, a tất cả, enter xong."""
+    """Bộ chọn file kiểu TUI: ↑↓ di chuyển, space chọn, d xem diff, enter xong."""
     items = changed_files()
     if not items:
         return False
     n = len(items)
+    branch, _ = branch_status()
     selected = {i for i, (code, _) in enumerate(items) if code[0] not in " ?"}
     if default_all and not selected:
         selected = set(range(n))
@@ -254,11 +342,11 @@ def tui_select(default_all=False):
         nonlocal rendered
         if rendered:
             sys.stdout.write(f"\033[{rendered}A")  # quay lên đầu khối
-        lines = [c(
-            "Chon file de stage  "
-            "(↑↓ di chuyen . space chon . a tat ca . enter xong . q huy)",
-            "1",
-        )]
+        lines = [
+            c(f"[{branch}] Chon file de stage ({len(selected)}/{n})", "1")
+            + c("  ↑↓ chon . space tick . d diff . a tat ca . enter xong . q huy",
+                "90"),
+        ]
         for i, (code, path) in enumerate(items):
             box = c("[x]", "32") if i in selected else "[ ]"
             pointer = c(">", "36") if i == cursor else " "
@@ -278,6 +366,9 @@ def tui_select(default_all=False):
             selected ^= {cursor}
         elif key == "all":
             selected = set() if len(selected) == n else set(range(n))
+        elif key == "diff":
+            show_file_diff(*items[cursor])
+            rendered = 0  # menu cu da troi len, ve lai menu moi
         elif key == "enter":
             break
         elif key == "quit":
@@ -293,7 +384,66 @@ def tui_select(default_all=False):
     return True
 
 
-def build_prompt(diff, files, vietnamese, hint=None):
+SKIP_NAMES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
+    "Cargo.lock", "composer.lock", "Gemfile.lock", "go.sum", "bun.lockb",
+    "packages.lock.json",
+}
+SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".lock")
+
+
+def is_noise_file(path):
+    """File lockfile/generated: van commit nhung khong gui noi dung cho LLM."""
+    name = os.path.basename(path)
+    return name in SKIP_NAMES or name.endswith(SKIP_SUFFIXES)
+
+
+def file_diff(path, from_head=False):
+    if from_head:
+        return run_git(["show", "--format=", "HEAD", "--", path])
+    return run_git(["diff", "--staged", "--", path])
+
+
+def file_stat(path, from_head=False):
+    if from_head:
+        return run_git(["show", "--format=", "--stat", "HEAD", "--", path])
+    return run_git(["diff", "--staged", "--stat", "--", path])
+
+
+def smart_diff(files, from_head=False):
+    """Gom diff tung file theo budget MAX_DIFF_CHARS.
+
+    - lockfile/generated/binary -> chi ghi ten vao 'skipped' (khong gui noi dung)
+    - file qua lon so voi budget con lai -> thay bang --stat cua file do
+    Tra (diff_text, skipped_list, truncated_flag).
+    """
+    parts, skipped = [], []
+    remaining = MAX_DIFF_CHARS
+    truncated = False
+    for f in files:
+        if is_noise_file(f):
+            skipped.append(f"{f} (lockfile/generated)")
+            continue
+        d = file_diff(f, from_head)
+        if "\nBinary files " in "\n" + d:
+            skipped.append(f"{f} (binary)")
+            continue
+        if len(d) > remaining:
+            stat = file_stat(f, from_head).strip()
+            entry = f"(diff for {f} too large - stats only)\n{stat}\n\n"
+            truncated = True
+            if len(entry) <= remaining:
+                parts.append(entry)
+                remaining -= len(entry)
+            else:
+                skipped.append(f"{f} (too large)")
+            continue
+        parts.append(d)
+        remaining -= len(d)
+    return "".join(parts), skipped, truncated
+
+
+def build_prompt(diff, files, vietnamese, hint=None, skipped=None):
     lang = (
         "Viet bang TIENG VIET." if vietnamese
         else "Write in ENGLISH."
@@ -345,8 +495,15 @@ def build_prompt(diff, files, vietnamese, hint=None):
         f"Extra context from the author (use it, it is important):\n{hint}\n\n"
         if hint else ""
     )
+    skipped_block = (
+        "Also changed, but content omitted (lockfiles/binary - mention "
+        "briefly in the body only if relevant):\n"
+        + "\n".join(f"- {s}" for s in skipped) + "\n\n"
+        if skipped else ""
+    )
     user = (
         f"{hint_block}"
+        f"{skipped_block}"
         f"Changed files:\n{files_list}\n\n"
         f"Git diff (staged):\n{diff}"
     )
@@ -369,7 +526,7 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "gcm/1.0",
+            "User-Agent": f"gcm/{VERSION}",
         },
         method="POST",
     )
@@ -379,9 +536,22 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "ignore")
         err(f"Groq API HTTP {e.code}: {detail[:300]}")
+        if e.code == 429:
+            print(c("  het quota/rate limit. Doi mot chut hoac xem: "
+                    "https://console.groq.com/settings/limits", "90"),
+                  file=sys.stderr)
+        elif e.code in (401, 403):
+            print(c("  key sai hoac het han. Tao key moi: "
+                    "https://console.groq.com/keys", "90"), file=sys.stderr)
+        elif e.code == 404:
+            print(c(f"  model '{model}' khong ton tai. Xem model list: "
+                    "https://console.groq.com/docs/models", "90"),
+                  file=sys.stderr)
         sys.exit(1)
     except urllib.error.URLError as e:
         err(f"loi mang: {e.reason}")
+        print(c("  kiem tra ket noi internet/proxy roi thu lai.", "90"),
+              file=sys.stderr)
         sys.exit(1)
     try:
         msg = body["choices"][0]["message"]["content"].strip()
@@ -396,6 +566,7 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
 
 
 def commit_with_message(message, amend=False):
+    """Commit voi message; tra returncode (0 = ok) de con push sau do."""
     args = ["git", "commit", "-F", "-"]
     if amend:
         args.append("--amend")
@@ -404,14 +575,56 @@ def commit_with_message(message, amend=False):
         encoding="utf-8", errors="replace",
         cwd=REPO_ROOT,
     )
-    sys.exit(res.returncode)
+    return res.returncode
+
+
+def branch_status():
+    """Tra (branch, ahead): ahead = so commit chua push, None neu chua co upstream."""
+    branch = run_git(["rev-parse", "--abbrev-ref", "HEAD"], check=False).strip()
+    out = run_git(["rev-list", "--count", "@{u}..HEAD"], check=False).strip()
+    ahead = int(out) if out.isdigit() else None
+    return branch, ahead
+
+
+def do_push():
+    """git push; chua co upstream thi goi y push -u origin <branch>. True = ok."""
+    print(c("Dang push...", "90"), file=sys.stderr)
+    res = subprocess.run(
+        ["git", "push"], cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    out = (res.stdout + res.stderr).strip()
+    if res.returncode == 0:
+        print(out or "push xong.")
+        return True
+    if "--set-upstream" in out or "no upstream" in out:
+        branch, _ = branch_status()
+        try:
+            ans = input(
+                f"chua co upstream. Chay 'git push -u origin {branch}'? "
+                + c("[Enter]", "1") + " dong y / " + c("[n]", "1") + " thoi: "
+            ).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        if ans in ("", "y", "yes"):
+            res = subprocess.run(
+                ["git", "push", "-u", "origin", branch], cwd=REPO_ROOT,
+            )
+            return res.returncode == 0
+        return False
+    err("push that bai:\n" + out)
+    return False
 
 
 def take_value(argv, *names):
     value, rest, i = None, [], 0
     while i < len(argv):
         a = argv[i]
-        if a in names and i + 1 < len(argv):
+        if a in names:
+            if i + 1 >= len(argv):
+                err(f"thieu gia tri cho {a} (vd: gcm {a} \"...\")")
+                sys.exit(1)
             value = argv[i + 1]
             i += 2
             continue
@@ -428,7 +641,9 @@ def take_value(argv, *names):
 def edit_message(message):
     """Open the message in $EDITOR and return the edited text."""
     import tempfile
-    editor = os.environ.get("EDITOR", "nano")
+    editor = os.environ.get("EDITOR") or (
+        "notepad" if os.name == "nt" else "nano"
+    )
     with tempfile.NamedTemporaryFile(
         "w+", suffix=".gitcommit", delete=False
     ) as tf:
@@ -444,7 +659,8 @@ def edit_message(message):
 def self_update():
     """git pull trong thư mục cài gcm để lấy bản mới nhất."""
     src_dir = os.path.dirname(os.path.realpath(__file__))
-    print(c(f"Cap nhat gcm tai {src_dir} ...", "90"), file=sys.stderr)
+    print(c(f"gcm v{VERSION} - cap nhat tai {src_dir} ...", "90"),
+          file=sys.stderr)
     res = subprocess.run(
         ["git", "-C", src_dir, "pull", "--ff-only"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -468,19 +684,36 @@ def main():
 
     argv = sys.argv[1:]
     if "-h" in argv or "--help" in argv:
+        print(f"gcm v{VERSION}")
         print(__doc__)
+        return
+    if "-v" in argv or "--version" in argv:
+        print(f"gcm v{VERSION}")
         return
     if "-u" in argv or "--update" in argv or (argv and argv[0] == "update"):
         self_update()
+    if argv and argv[0] == "config":
+        show_config()
     hint, argv = take_value(argv, "-m", "--hint")
     model_override, argv = take_value(argv, "--model")
     print_only = "-p" in argv or "--print" in argv
-    vietnamese = "--vi" in argv
+    # ngon ngu: config lang=vi -> mac dinh --vi; --en de ep lai English
+    vietnamese = (
+        "--vi" in argv
+        or (CONFIG.get("lang", "").lower() == "vi" and "--en" not in argv)
+    )
     add_all = "-a" in argv or "--all" in argv
     select = "-s" in argv or "--select" in argv
-    tui = "-t" in argv or "--tui" in argv
+    # tui: config tui=true -> mac dinh TUI; -s (nhap so) van uu tien hon
+    tui = "-t" in argv or "--tui" in argv or (
+        cfg_bool(CONFIG.get("tui", "")) and not select
+    )
     auto_yes = "-y" in argv or "--yes" in argv
     amend = "--amend" in argv
+    # push: --push hoac config push=always -> tu push sau commit
+    push_cfg = CONFIG.get("push", "ask").lower()
+    auto_push = "--push" in argv or push_cfg == "always"
+    no_push = push_cfg == "never"
     model = model_override or MODEL
 
     ensure_repo()
@@ -511,6 +744,7 @@ def main():
         return d, fs
 
     diff, files = load_staged()
+    from_head = False  # --amend khong stage gi: lay diff tu HEAD
 
     if not diff.strip():
         status = run_git(["status", "--porcelain"]).strip()
@@ -521,6 +755,7 @@ def main():
                 run_git(["show", "--name-only", "--format=", "HEAD"]).splitlines()
                 if ln.strip()
             ]
+            from_head = True
             if not diff.strip():
                 err("khong co commit nao de --amend.")
                 sys.exit(1)
@@ -539,14 +774,16 @@ def main():
 
     api_key = get_api_key()
 
-    truncated = len(diff) > MAX_DIFF_CHARS
-    if truncated:
-        diff = diff[:MAX_DIFF_CHARS] + "\n...[diff truncated]..."
+    # smart diff: loai lockfile/binary, file qua lon thay bang --stat
+    diff, skipped, truncated = smart_diff(files, from_head)
+    if not diff.strip():
+        # toan bo deu bi loai (vd chi commit lockfile) -> gui stat tong
+        diff = file_stat(".", from_head)
 
     def generate(temperature):
         if not print_only:
             print(c("Dang sinh commit message...", "90"), file=sys.stderr)
-        system, user = build_prompt(diff, files, vietnamese, hint)
+        system, user = build_prompt(diff, files, vietnamese, hint, skipped)
         return call_groq(api_key, system, user, model, temperature)
 
     message = generate(0.3)
@@ -555,22 +792,40 @@ def main():
         print(message)
         return
 
+    def finish(want_push):
+        rc = commit_with_message(message, amend)
+        if rc != 0:
+            sys.exit(rc)
+        if want_push and not no_push:
+            do_push()
+        sys.exit(0)
+
     if auto_yes:
-        commit_with_message(message, amend)
-        return
+        finish(auto_push)
+
+    branch, ahead = branch_status()
+    branch_line = c(f"nhanh {branch}", "36") + (
+        c(f"  ↑{ahead} chua push", "33") if ahead else ""
+    )
 
     temperature = 0.3
     while True:
         print()
+        print(branch_line)
         print(c("-" * 60, "90"))
         print(c(message, "32"))
         print(c("-" * 60, "90"))
         if truncated:
-            print(c("(diff lon nen da duoc cat bot khi gui)", "90"))
+            print(c("(diff lon: mot phan chi gui thong ke --stat)", "90"))
+        if skipped:
+            print(c(f"(da loai khoi noi dung gui: {', '.join(skipped)})", "90"))
 
-        prompt = (
-            c("[Enter]", "1") + (" amend  " if amend else " commit  ")
-            + c("[e]", "1") + " sua  "
+        action = " amend  " if amend else " commit  "
+        prompt = c("[Enter]", "1") + action
+        if not no_push:
+            prompt += c("[p]", "1") + (" +push  " if amend else " commit+push  ")
+        prompt += (
+            c("[e]", "1") + " sua  "
             + c("[r]", "1") + " tao lai  "
             + c("[n]", "1") + " huy: "
         )
@@ -594,7 +849,7 @@ def main():
                 sys.exit(1)
         break
 
-    commit_with_message(message, amend)
+    finish(auto_push or choice == "p")
 
 
 if __name__ == "__main__":
