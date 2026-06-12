@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Determine and check version
+        id: ver
+        shell: bash
+        run: |
+          VERSION=$(python -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('gcm').read(), re.M).group(1))")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "gcm VERSION = $VERSION"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$TAG" != "$VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match VERSION $VERSION in gcm"
+              exit 1
+            fi
+          fi
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build gcm.exe
+        shell: bash
+        run: |
+          cp gcm gcm_entry.py
+          pyinstaller --onefile --name gcm gcm_entry.py
+
+      - name: Smoke test gcm.exe
+        shell: bash
+        run: |
+          OUT=$(./dist/gcm.exe -v)
+          echo "$OUT"
+          echo "$OUT" | grep -q "gcm v${{ steps.ver.outputs.version }}"
+
+      - name: Install WiX
+        run: dotnet tool install --global wix
+
+      - name: Build MSI
+        shell: bash
+        run: |
+          wix build packaging/windows/gcm.wxs -d Version=${{ steps.ver.outputs.version }} -o gcm-${{ steps.ver.outputs.version }}.msi
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: gcm-${{ steps.ver.outputs.version }}.msi
+          generate_release_notes: true
