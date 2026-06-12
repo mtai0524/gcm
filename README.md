@@ -83,6 +83,7 @@ rồi mở lại terminal.
 ```bash
 git add .     # stage thay đổi
 gcm           # message tiếng Anh (Conventional Commits) + hỏi commit
+gcm -s        # chọn file để stage (interactive) rồi sinh message
 gcm --vi      # message tiếng Việt
 gcm -a        # tự git add -A rồi sinh
 gcm -p        # chỉ in message, không hỏi (tiện copy / nối lệnh)
@@ -90,6 +91,21 @@ gcm -h        # trợ giúp
 ```
 
 Sau khi sinh, tool hỏi: `[Enter]` commit luôn / `[e]` mở editor sửa / `[n]` hủy.
+
+### Chọn file để stage (`-s`)
+
+Không cần `git add` thủ công. Chạy `gcm -s` (hoặc chỉ `gcm` khi chưa stage gì —
+tool tự mở bộ chọn) để hiện danh sách file thay đổi:
+
+```
+Chọn file để stage:
+  ●  1. added     src/app.py      ● = đã stage, ○ = chưa
+  ○  2. modified  README.md
+  ○  3. new       test/new.py
+  Nhập số ('1 3', '1-3'), 'a' = tất cả, Enter = giữ nguyên, 'q' = hủy
+```
+
+Nhập số theo nhiều cú pháp: `1 3` (rời), `1-3` (khoảng), `a` (tất cả).
 
 ---
 
