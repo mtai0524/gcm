@@ -35,6 +35,7 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = os.environ.get("GCM_MODEL", "llama-3.3-70b-versatile")
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
+REPO_ROOT = None  # gốc repo, set sau khi xác nhận đang trong git repo
 
 
 # ---- small terminal color helpers ----
@@ -54,6 +55,7 @@ def run_git(args, check=True):
         ["git"] + args,
         capture_output=True, text=True,
         encoding="utf-8", errors="replace",
+        cwd=REPO_ROOT,  # luôn chạy từ gốc repo (path porcelain là root-relative)
     )
     if check and res.returncode != 0:
         err(res.stderr.strip() or f"git {' '.join(args)} failed")
@@ -84,14 +86,18 @@ def get_api_key():
 
 
 def ensure_repo():
+    global REPO_ROOT
     res = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
+        ["git", "rev-parse", "--is-inside-work-tree", "--show-toplevel"],
         capture_output=True, text=True,
         encoding="utf-8", errors="replace",
     )
-    if res.returncode != 0 or res.stdout.strip() != "true":
+    lines = res.stdout.splitlines()
+    if res.returncode != 0 or not lines or lines[0].strip() != "true":
         err("không phải git repository (chạy trong thư mục repo).")
         sys.exit(1)
+    # dòng 2 là đường dẫn gốc repo -> mọi lệnh git sau đều chạy từ đây
+    REPO_ROOT = lines[1].strip() if len(lines) > 1 else None
 
 
 def changed_files():
@@ -264,6 +270,7 @@ def commit_with_message(message, amend=False):
     res = subprocess.run(
         args, input=message, text=True,
         encoding="utf-8", errors="replace",
+        cwd=REPO_ROOT,
     )
     sys.exit(res.returncode)
 
