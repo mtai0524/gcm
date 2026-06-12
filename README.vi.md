@@ -67,6 +67,19 @@ gcm -h
 **API key** — đọc theo thứ tự: env `GROQ_API_KEY` → file `~/.config/gcm/config`
 (Windows: `%USERPROFILE%\.config\gcm\config`, 1 dòng key `gsk_...`).
 
+### Cài trên Windows (MSI)
+
+Muốn cài một phát trên Windows (không cần Git Bash, không cần tự cài Python)?
+
+1. Vào [trang Releases](https://github.com/mtai0524/gcm/releases).
+2. Tải file `gcm-X.Y.Z.msi` mới nhất.
+3. Chạy nó. Trình cài tự thêm `gcm` vào `PATH` hệ thống.
+4. Mở terminal **mới** (PowerShell hoặc CMD) rồi gõ `gcm -h`.
+
+> MSI chưa ký số nên Windows SmartScreen có thể cảnh báo lần đầu — chọn
+> "More info" → "Run anyway". Cập nhật bằng cách tải MSI mới hơn (lệnh tự cập
+> nhật `gcm -u` chỉ dùng được cho bản cài bằng git clone).
+
 ---
 
 ## 2. Update

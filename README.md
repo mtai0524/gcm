@@ -67,6 +67,19 @@ gcm -h
 **API key** — resolved in order: env `GROQ_API_KEY` → file `~/.config/gcm/config`
 (Windows: `%USERPROFILE%\.config\gcm\config`, one line: `gsk_...`).
 
+### Install on Windows (MSI)
+
+Prefer a one-click install on Windows (no Git Bash, no manual Python)?
+
+1. Go to the [Releases page](https://github.com/mtai0524/gcm/releases).
+2. Download the latest `gcm-X.Y.Z.msi`.
+3. Run it. The installer adds `gcm` to your system `PATH`.
+4. Open a **new** terminal (PowerShell or CMD) and run `gcm -h`.
+
+> The MSI is unsigned, so Windows SmartScreen may warn on first run — choose
+> "More info" → "Run anyway". Update by downloading a newer MSI (`gcm -u`
+> self-update only works for the git-cloned install).
+
 ---
 
 ## 2. Update
