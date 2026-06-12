@@ -102,11 +102,13 @@ git -C $HOME\tools\gcm pull
 
 After generating: `[Enter]` commit · `[e]` edit · `[r]` regenerate · `[n]` cancel.
 
-`gcm -s` (or `gcm` when nothing is staged) shows a picker:
+`gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick from:
 ```
-  ●  1. added     src/app.py      ● staged · ○ not staged
+Chọn file để stage (3 thay đổi):
+  ●  1. added     src/app.py          ● staged · ○ not staged
   ○  2. modified  README.md
-  Enter numbers ('1 3', '1-3'), 'a' = all, Enter = keep, 'q' = cancel
+  ○  3. new       src/Web/Chart.razor
+  số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
 ```
 
 <details>

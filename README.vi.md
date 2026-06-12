@@ -102,11 +102,13 @@ Lệnh `gcm` trỏ vào thư mục clone nên `git pull` là xong, không cài l
 
 Sau khi sinh: `[Enter]` commit · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
 
-`gcm -s` (hoặc `gcm` khi chưa stage gì) hiện danh sách file để chọn:
+`gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn:
 ```
-  ●  1. added     src/app.py      ● đã stage · ○ chưa
+Chọn file để stage (3 thay đổi):
+  ●  1. added     src/app.py          ● đã stage · ○ chưa
   ○  2. modified  README.md
-  Nhập số ('1 3', '1-3'), 'a' = tất cả, Enter = giữ nguyên, 'q' = hủy
+  ○  3. new       src/Web/Chart.razor
+  số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
 ```
 
 <details>
