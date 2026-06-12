@@ -51,7 +51,7 @@ jobs:
           echo "$OUT" | grep -q "gcm v${{ steps.ver.outputs.version }}"
 
       - name: Install WiX
-        run: dotnet tool install --global wix
+        run: dotnet tool install --global wix --version 5.*
 
       - name: Build MSI
         shell: bash
