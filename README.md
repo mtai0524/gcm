@@ -104,7 +104,7 @@ git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 
 After generating: `[Enter]` commit · `[e]` edit · `[r]` regenerate · `[n]` cancel.
 
-`gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick from:
+`gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick by number:
 ```
 Chọn file để stage (3 thay đổi):
   ●  1. added     src/app.py          ● staged · ○ not staged
@@ -112,6 +112,10 @@ Chọn file để stage (3 thay đổi):
   ○  3. new       src/Web/Chart.razor
   số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
 ```
+
+`gcm -t` opens a TUI instead — move with `↑↓` (or `j`/`k`), toggle with `Space`,
+`a` for all, `Enter` to confirm. Falls back to the numbered picker if the
+terminal doesn't support it (e.g. piped input).
 
 <details>
 <summary>Technical notes</summary>

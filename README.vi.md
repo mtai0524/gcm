@@ -90,7 +90,8 @@ Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 | Lệnh | |
 |---------|--|
 | `gcm`            | sinh message (English) + hỏi commit |
-| `gcm -s`         | chọn file để stage rồi sinh |
+| `gcm -s`         | chọn file để stage bằng số rồi sinh |
+| `gcm -t`         | chọn file kiểu TUI (↑↓ + space) rồi sinh |
 | `gcm -m "gợi ý"` | truyền thêm ngữ cảnh cho model |
 | `gcm -y`         | commit luôn, không hỏi |
 | `gcm --amend`    | sửa (reword) commit gần nhất |
@@ -103,7 +104,7 @@ Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 
 Sau khi sinh: `[Enter]` commit · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
 
-`gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn:
+`gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn bằng số:
 ```
 Chọn file để stage (3 thay đổi):
   ●  1. added     src/app.py          ● đã stage · ○ chưa
@@ -111,6 +112,9 @@ Chọn file để stage (3 thay đổi):
   ○  3. new       src/Web/Chart.razor
   số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
 ```
+
+`gcm -t` mở TUI thay vì nhập số — di chuyển `↑↓` (hoặc `j`/`k`), `Space` tick chọn,
+`a` tất cả, `Enter` xong. Tự về chế độ nhập số nếu terminal không hỗ trợ (vd pipe).
 
 <details>
 <summary>Ghi chú kỹ thuật</summary>
