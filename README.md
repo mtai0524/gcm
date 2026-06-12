@@ -71,9 +71,16 @@ gcm -h
 
 ## 2. Update
 
+Linux / macOS / **Git Bash**:
 ```bash
-git -C ~/tools/gcm pull      # PowerShell: git -C $HOME\tools\gcm pull
+git -C ~/tools/gcm pull
 ```
+
+Windows **PowerShell** (`~` is not expanded here — use `$HOME`):
+```powershell
+git -C $HOME\tools\gcm pull
+```
+
 `gcm` points at the cloned folder, so `git pull` is all you need — no reinstall.
 
 ---

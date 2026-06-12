@@ -71,9 +71,16 @@ gcm -h
 
 ## 2. Update
 
+Linux / macOS / **Git Bash**:
 ```bash
-git -C ~/tools/gcm pull      # PowerShell: git -C $HOME\tools\gcm pull
+git -C ~/tools/gcm pull
 ```
+
+Windows **PowerShell** (ở đây `~` không tự hiểu — phải dùng `$HOME`):
+```powershell
+git -C $HOME\tools\gcm pull
+```
+
 Lệnh `gcm` trỏ vào thư mục clone nên `git pull` là xong, không cài lại.
 
 ---
