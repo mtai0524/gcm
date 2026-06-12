@@ -89,14 +89,18 @@ Lệnh `gcm` trỏ vào thư mục clone nên `git pull` là xong, không cài l
 
 | Lệnh | |
 |---------|--|
-| `gcm`      | sinh message (English) + hỏi commit |
-| `gcm -s`   | chọn file để stage rồi sinh |
-| `gcm --vi` | message tiếng Việt |
-| `gcm -a`   | `git add -A` rồi sinh |
-| `gcm -p`   | chỉ in message, không hỏi |
-| `gcm -h`   | trợ giúp |
+| `gcm`            | sinh message (English) + hỏi commit |
+| `gcm -s`         | chọn file để stage rồi sinh |
+| `gcm -m "gợi ý"` | truyền thêm ngữ cảnh cho model |
+| `gcm -y`         | commit luôn, không hỏi |
+| `gcm --amend`    | sửa (reword) commit gần nhất |
+| `gcm --vi`       | message tiếng Việt |
+| `gcm -a`         | `git add -A` rồi sinh |
+| `gcm -p`         | chỉ in message, không hỏi |
+| `gcm --model X`  | dùng model `X` (hoặc env `GCM_MODEL`) cho lần chạy này |
+| `gcm -h`         | trợ giúp |
 
-Sau khi sinh: `[Enter]` commit · `[e]` sửa trong editor · `[n]` hủy.
+Sau khi sinh: `[Enter]` commit · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
 
 `gcm -s` (hoặc `gcm` khi chưa stage gì) hiện danh sách file để chọn:
 ```

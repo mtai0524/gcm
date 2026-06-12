@@ -5,18 +5,24 @@ Reads your staged changes, asks an LLM for a Conventional Commits message,
 prints it and lets you commit. No paid API needed (Groq free tier).
 
 Usage:
-  gcm            Generate message and ask to commit
-  gcm -s         Chọn file để stage (interactive) rồi generate
-  gcm -p         Print message only (no prompt)
-  gcm -a         git add -A first, then generate
-  gcm --vi       Vietnamese commit message (default: English)
-  gcm -h         Show help
+  gcm                Generate message and ask to commit
+  gcm -s             Chọn file để stage (interactive) rồi generate
+  gcm -a             git add -A first, then generate
+  gcm -m "hint"      Thêm ngữ cảnh/gợi ý cho message
+  gcm -y             Commit luôn, không hỏi
+  gcm --amend        Sửa (reword) commit gần nhất
+  gcm --vi           Vietnamese commit message (default: English)
+  gcm -p             Print message only (no prompt)
+  gcm --model NAME   Đổi model cho lần chạy này
+  gcm -h             Show help
 
+Khi review: [Enter] commit · [e] sửa · [r] tạo lại · [n] hủy.
 Nếu chưa stage gì mà working tree có thay đổi, gcm tự mở bộ chọn file.
 
 Config:
-  Set GROQ_API_KEY env var, or put the key in ~/.config/gcm/config
-  Get a free key at https://console.groq.com/keys
+  GROQ_API_KEY   API key (hoặc file ~/.config/gcm/config)
+  GCM_MODEL      Đổi model mặc định (mặc định: llama-3.3-70b-versatile)
+  Lấy key free tại https://console.groq.com/keys
 """
 import json
 import os
@@ -26,7 +32,7 @@ import urllib.error
 import urllib.request
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = os.environ.get("GCM_MODEL", "llama-3.3-70b-versatile")
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
 
@@ -177,7 +183,7 @@ def select_files():
     return True
 
 
-def build_prompt(diff, files, vietnamese):
+def build_prompt(diff, files, vietnamese, hint=None):
     lang = (
         "Viết bằng TIẾNG VIỆT." if vietnamese
         else "Write in ENGLISH."
@@ -196,17 +202,22 @@ def build_prompt(diff, files, vietnamese):
         f"{lang} "
         "Output ONLY the commit message, no markdown fences, no preamble."
     )
+    hint_block = (
+        f"Extra context from the author (use it, it is important):\n{hint}\n\n"
+        if hint else ""
+    )
     user = (
+        f"{hint_block}"
         f"Changed files:\n{files_list}\n\n"
         f"Git diff (staged):\n{diff}"
     )
     return system, user
 
 
-def call_groq(api_key, system, user):
+def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
     payload = {
-        "model": MODEL,
-        "temperature": 0.3,
+        "model": model,
+        "temperature": temperature,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -246,12 +257,37 @@ def call_groq(api_key, system, user):
     return msg
 
 
-def commit_with_message(message):
+def commit_with_message(message, amend=False):
+    args = ["git", "commit", "-F", "-"]
+    if amend:
+        args.append("--amend")
     res = subprocess.run(
-        ["git", "commit", "-F", "-"], input=message, text=True,
+        args, input=message, text=True,
         encoding="utf-8", errors="replace",
     )
     sys.exit(res.returncode)
+
+
+def take_value(argv, *names):
+    """Tách option có giá trị ('-m hint' hoặc '--hint=hint').
+
+    Trả về (value | None, argv_còn_lại).
+    """
+    value, rest, i = None, [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in names and i + 1 < len(argv):
+            value = argv[i + 1]
+            i += 2
+            continue
+        hit = next((n for n in names if a.startswith(n + "=")), None)
+        if hit:
+            value = a.split("=", 1)[1]
+            i += 1
+            continue
+        rest.append(a)
+        i += 1
+    return value, rest
 
 
 def edit_message(message):
@@ -282,10 +318,15 @@ def main():
     if "-h" in argv or "--help" in argv:
         print(__doc__)
         return
+    hint, argv = take_value(argv, "-m", "--hint")
+    model_override, argv = take_value(argv, "--model")
     print_only = "-p" in argv or "--print" in argv
     vietnamese = "--vi" in argv
     add_all = "-a" in argv or "--all" in argv
     select = "-s" in argv or "--select" in argv
+    auto_yes = "-y" in argv or "--yes" in argv
+    amend = "--amend" in argv
+    model = model_override or MODEL
 
     ensure_repo()
 
@@ -305,20 +346,31 @@ def main():
     diff, files = load_staged()
 
     if not diff.strip():
-        # chưa stage gì - kiểm tra có thay đổi nào chưa stage không
         status = run_git(["status", "--porcelain"]).strip()
-        if not status:
+        if amend:
+            # reword commit gần nhất: dùng diff của chính commit đó làm ngữ cảnh
+            diff = run_git(["show", "--format=", "HEAD"])
+            files = [
+                ln for ln in
+                run_git(["show", "--name-only", "--format=", "HEAD"]).splitlines()
+                if ln.strip()
+            ]
+            if not diff.strip():
+                err("không có commit nào để --amend.")
+                sys.exit(1)
+        elif not status:
             err("nothing to commit (working tree clean).")
             sys.exit(1)
-        if print_only:
+        elif print_only:
             err("chưa stage thay đổi nào. Dùng `git add` hoặc `gcm -a`.")
             sys.exit(1)
-        # tự mở bộ chọn file thay vì báo lỗi
-        select_files()
-        diff, files = load_staged()
-        if not diff.strip():
-            err("chưa có file nào được stage.")
-            sys.exit(1)
+        else:
+            # tự mở bộ chọn file thay vì báo lỗi
+            select_files()
+            diff, files = load_staged()
+            if not diff.strip():
+                err("chưa có file nào được stage.")
+                sys.exit(1)
 
     api_key = get_api_key()
 
@@ -326,42 +378,58 @@ def main():
     if truncated:
         diff = diff[:MAX_DIFF_CHARS] + "\n...[diff truncated]..."
 
-    if not print_only:
-        print(c("Đang sinh commit message...", "90"), file=sys.stderr)
+    def generate(temperature):
+        if not print_only:
+            print(c("Đang sinh commit message...", "90"), file=sys.stderr)
+        system, user = build_prompt(diff, files, vietnamese, hint)
+        return call_groq(api_key, system, user, model, temperature)
 
-    system, user = build_prompt(diff, files, vietnamese)
-    message = call_groq(api_key, system, user)
+    message = generate(0.3)
 
     if print_only:
         print(message)
         return
 
-    print()
-    print(c("─" * 60, "90"))
-    print(c(message, "32"))
-    print(c("─" * 60, "90"))
-    if truncated:
-        print(c("(diff lớn nên đã được cắt bớt khi gửi)", "90"))
+    if auto_yes:
+        commit_with_message(message, amend)
+        return  # commit_with_message gọi sys.exit
 
-    try:
-        choice = input(
-            c("[Enter]", "1") + " commit  "
-            + c("[e]", "1") + " sửa  "
-            + c("[n]", "1") + " hủy: "
-        ).strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    temperature = 0.3
+    while True:
         print()
-        sys.exit(1)
+        print(c("─" * 60, "90"))
+        print(c(message, "32"))
+        print(c("─" * 60, "90"))
+        if truncated:
+            print(c("(diff lớn nên đã được cắt bớt khi gửi)", "90"))
 
-    if choice == "n":
-        print("Đã hủy.")
-        sys.exit(0)
-    if choice == "e":
-        message = edit_message(message)
-        if not message:
-            err("message rỗng, đã hủy.")
+        prompt = (
+            c("[Enter]", "1") + (" amend  " if amend else " commit  ")
+            + c("[e]", "1") + " sửa  "
+            + c("[r]", "1") + " tạo lại  "
+            + c("[n]", "1") + " hủy: "
+        )
+        try:
+            choice = input(prompt).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
             sys.exit(1)
-    commit_with_message(message)
+
+        if choice == "n":
+            print("Đã hủy.")
+            sys.exit(0)
+        if choice == "r":
+            temperature = min(temperature + 0.3, 1.0)
+            message = generate(temperature)
+            continue
+        if choice == "e":
+            message = edit_message(message)
+            if not message:
+                err("message rỗng, đã hủy.")
+                sys.exit(1)
+        break
+
+    commit_with_message(message, amend)
 
 
 if __name__ == "__main__":

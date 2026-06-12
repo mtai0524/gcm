@@ -89,14 +89,18 @@ git -C $HOME\tools\gcm pull
 
 | Command | |
 |---------|--|
-| `gcm`      | generate message (English) + ask to commit |
-| `gcm -s`   | pick files to stage, then generate |
-| `gcm --vi` | message in Vietnamese |
-| `gcm -a`   | `git add -A` first, then generate |
-| `gcm -p`   | print message only (no prompt) |
-| `gcm -h`   | help |
+| `gcm`            | generate message (English) + ask to commit |
+| `gcm -s`         | pick files to stage, then generate |
+| `gcm -m "hint"`  | give the model extra context |
+| `gcm -y`         | commit immediately, no prompt |
+| `gcm --amend`    | reword the last commit |
+| `gcm --vi`       | message in Vietnamese |
+| `gcm -a`         | `git add -A` first, then generate |
+| `gcm -p`         | print message only (no prompt) |
+| `gcm --model X`  | use model `X` (or env `GCM_MODEL`) for this run |
+| `gcm -h`         | help |
 
-After generating: `[Enter]` commit · `[e]` edit in editor · `[n]` cancel.
+After generating: `[Enter]` commit · `[e]` edit · `[r]` regenerate · `[n]` cancel.
 
 `gcm -s` (or `gcm` when nothing is staged) shows a picker:
 ```
