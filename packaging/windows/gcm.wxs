@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="gcm"
       Manufacturer="devduide"
@@ -10,6 +11,10 @@
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of gcm is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- Giao dien cai dat: Welcome -> License -> Progress -> Finish -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="packaging/windows/License.rtf" />
 
     <!-- Thong tin hien trong Add/Remove Programs -->
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/mtai0524/gcm" />

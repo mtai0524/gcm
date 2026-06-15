@@ -63,10 +63,14 @@ if (-not $wix) {
 $toolsDir = Join-Path $env:USERPROFILE '.dotnet\tools'
 if ($env:PATH -notlike "*$toolsDir*") { $env:PATH = "$env:PATH;$toolsDir" }
 
-# 7. Dong goi MSI
+# 6b. Dam bao co WiX UI extension (cho giao dien cai dat)
+Write-Host "==> Cai WiX UI extension..."
+wix extension add -g WixToolset.UI.wixext
+
+# 7. Dong goi MSI (kem -ext UI)
 $Msi = "gcm-$Version.msi"
 Write-Host "==> Build $Msi..."
-wix build -arch x64 packaging\windows\gcm.wxs -d Version=$Version -o $Msi
+wix build -arch x64 -ext WixToolset.UI.wixext packaging\windows\gcm.wxs -d Version=$Version -o $Msi
 
 # 8. Don dep san pham build trung gian (giu lai file .msi)
 Remove-Item -Recurse -Force build, dist, gcm.spec, gcm_entry.py -ErrorAction SilentlyContinue
