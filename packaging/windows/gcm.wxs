@@ -32,6 +32,9 @@
             <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]"
                          Part="last" Action="set" System="no" Permanent="no" />
           </Component>
+          <Component Id="GcmSetupScript" Bitness="always64">
+            <File Id="GcmSetupScriptFile" Source="packaging/windows/setup-profile.ps1" KeyPath="yes" />
+          </Component>
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -39,6 +42,24 @@
     <Feature Id="Main" Title="gcm" Level="1">
       <ComponentRef Id="GcmExe" />
       <ComponentRef Id="GcmPath" />
+      <ComponentRef Id="GcmSetupScript" />
     </Feature>
+
+    <!-- Cau hinh lenh 'gcm' trong PowerShell profile (ghi de alias Get-Command).
+         Chay setup-profile.ps1 da cai; dung $env:LOCALAPPDATA nen khong can
+         resolve [INSTALLFOLDER] trong ngu canh deferred. -->
+    <CustomAction Id="GcmAddProfile"
+        Directory="INSTALLFOLDER"
+        ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp; '$env:LOCALAPPDATA\Programs\gcm\setup-profile.ps1' install&quot;"
+        Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="GcmRemoveProfile"
+        Directory="INSTALLFOLDER"
+        ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;&amp; '$env:LOCALAPPDATA\Programs\gcm\setup-profile.ps1' uninstall&quot;"
+        Execute="deferred" Impersonate="yes" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="GcmAddProfile" After="InstallFiles" Condition="NOT Installed" />
+      <Custom Action="GcmRemoveProfile" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
   </Package>
 </Wix>
