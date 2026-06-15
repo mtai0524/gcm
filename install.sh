@@ -35,9 +35,11 @@ EOF
     echo "  [ok] wrapper: $BIN_DIR/gcm  (dùng '$PY')"
     ;;
   *)
-    # Linux / macOS: symlink + shebang
-    ln -sf "$SCRIPT_DIR/gcm" "$BIN_DIR/gcm"
-    echo "  [ok] symlink: $BIN_DIR/gcm -> $SCRIPT_DIR/gcm"
+    # Linux / macOS: copy thang file vao PATH (standalone, khong phu thuoc repo)
+    rm -f "$BIN_DIR/gcm"
+    cp "$SCRIPT_DIR/gcm" "$BIN_DIR/gcm"
+    chmod +x "$BIN_DIR/gcm"
+    echo "  [ok] da copy: $BIN_DIR/gcm (ban standalone)"
     ;;
 esac
 
