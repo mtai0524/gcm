@@ -6,7 +6,7 @@
       Manufacturer="devduide"
       Version="$(Version)"
       UpgradeCode="86B66A85-F6A0-4061-AE53-8F52B10FC1BD"
-      Scope="perMachine"
+      Scope="perUser"
       Compressed="yes">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of gcm is already installed." />
@@ -20,15 +20,19 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/mtai0524/gcm" />
     <Property Id="ARPHELPLINK" Value="https://github.com/mtai0524/gcm" />
 
-    <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="gcm">
-        <Component Id="GcmExe" Bitness="always64">
-          <File Id="GcmExeFile" Source="dist/gcm.exe" KeyPath="yes" />
-        </Component>
-        <Component Id="GcmPath" Guid="ABB8F2A6-399B-4846-A72C-259FDCAB3A06" Bitness="always64">
-          <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]"
-                       Part="last" Action="set" System="yes" Permanent="no" />
-        </Component>
+    <!-- Cai vao thu muc user: %LocalAppData%\Programs\gcm (khong can admin) -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="gcm">
+          <Component Id="GcmExe" Bitness="always64">
+            <File Id="GcmExeFile" Source="dist/gcm.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="GcmPath" Guid="ABB8F2A6-399B-4846-A72C-259FDCAB3A06" Bitness="always64">
+            <!-- System="no" -> ghi vao PATH cua USER (HKCU), khong can admin -->
+            <Environment Id="PathEnv" Name="PATH" Value="[INSTALLFOLDER]"
+                         Part="last" Action="set" System="no" Permanent="no" />
+          </Component>
+        </Directory>
       </Directory>
     </StandardDirectory>
 
