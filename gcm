@@ -35,6 +35,7 @@ Config (~/.config/gcm/config, dang key = value):
   model = <ten model>    mac dinh: llama-3.3-70b-versatile
   tui = true | false     mac dinh chon file kieu TUI
   push = ask | always | never
+  coauthor = Ten <email> them 'Co-authored-by' khi push (off de tat)
 Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
 """
 import json
@@ -57,8 +58,12 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
-CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push")
+CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor")
 REPO_ROOT = None
+
+# Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
+# Co the doi/tat qua config: coauthor = Ten <email>  hoac  coauthor = off
+DEFAULT_COAUTHOR = "devduide <mtai0524@users.noreply.github.com>"
 
 
 def load_config():
@@ -113,6 +118,8 @@ def show_config():
     print(c(f"  model = {DEFAULT_MODEL}", "90"))
     print(c("  tui = true         # mac dinh chon file kieu TUI", "90"))
     print(c("  push = ask         # ask | always | never", "90"))
+    print(c(f"  coauthor = {DEFAULT_COAUTHOR}  # them khi push (off de tat)",
+            "90"))
     sys.exit(0)
 
 
@@ -590,6 +597,21 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
     return msg
 
 
+def add_coauthor(message):
+    """Them trailer 'Co-authored-by: ...' vao cuoi message neu chua co.
+
+    Lay tu config 'coauthor' (vd: 'Ten <email>'), mac dinh DEFAULT_COAUTHOR.
+    coauthor = off|none|false -> khong them. Tra message da co trailer.
+    """
+    raw = CONFIG.get("coauthor", DEFAULT_COAUTHOR).strip()
+    if raw.lower() in ("off", "none", "false", "no", ""):
+        return message
+    trailer = f"Co-authored-by: {raw}"
+    if trailer.lower() in message.lower():
+        return message
+    return message.rstrip() + "\n\n" + trailer + "\n"
+
+
 def commit_with_message(message, amend=False):
     """Commit voi message; tra returncode (0 = ok) de con push sau do."""
     args = ["git", "commit", "-F", "-"]
@@ -819,10 +841,13 @@ def main():
         return
 
     def finish(want_push):
-        rc = commit_with_message(message, amend)
+        do_push_now = want_push and not no_push
+        # chi them credit coauthor khi commit co kem push len remote
+        final = add_coauthor(message) if do_push_now else message
+        rc = commit_with_message(final, amend)
         if rc != 0:
             sys.exit(rc)
-        if want_push and not no_push:
+        if do_push_now:
             do_push()
         sys.exit(0)
 
