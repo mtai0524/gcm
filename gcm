@@ -35,7 +35,7 @@ Config (~/.config/gcm/config, dang key = value):
   model = <ten model>    mac dinh: llama-3.3-70b-versatile
   tui = true | false     mac dinh chon file kieu TUI
   push = ask | always | never
-  coauthor = Ten <email> them 'Co-authored-by' khi push (off de tat)
+  coauthor = Ten <email> them 'Co-authored-by' khi push tu gcm (off de tat)
 Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
 """
 import json
@@ -63,7 +63,7 @@ REPO_ROOT = None
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
 # Co the doi/tat qua config: coauthor = Ten <email>  hoac  coauthor = off
-DEFAULT_COAUTHOR = "devduide <mtai0524@users.noreply.github.com>"
+DEFAULT_COAUTHOR = "devduide <devduide@users.noreply.github.com>"
 
 
 def load_config():
@@ -842,7 +842,7 @@ def main():
 
     def finish(want_push):
         do_push_now = want_push and not no_push
-        # chi them credit coauthor khi commit co kem push len remote
+        # chi them credit coauthor khi push code tu gcm (commit+push / --push)
         final = add_coauthor(message) if do_push_now else message
         rc = commit_with_message(final, amend)
         if rc != 0:
