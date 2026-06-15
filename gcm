@@ -475,6 +475,15 @@ def build_prompt(diff, files, vietnamese, hint=None, skipped=None):
         "'remove Height/HeightPx props, drop Lib param, and remove default "
         "Guid-based Id generation' - this level of detail belongs in the body, "
         "not the summary. "
+        # ---- scope rules when several files/areas change ----
+        "SCOPE: pick a scope that COVERS all the changed files/areas, not just "
+        "one of them. If the diff touches multiple files or unrelated concerns, "
+        "either use a broader shared scope (e.g. the feature or module name) or "
+        "OMIT the scope entirely (just 'type: summary'). "
+        "Do NOT scope the commit to a single file when other files also changed. "
+        "When the changes span clearly different concerns, make the summary "
+        "describe the overall intent across them rather than only the first file "
+        "- e.g. 'refactor: simplify menu bar and update file-upload endpoint'. "
         # ---- body rules ----
         "Then add a blank line and a DETAILED body of bullet points (each "
         "starting with '- '), in the style of GitHub Copilot commit messages. "
