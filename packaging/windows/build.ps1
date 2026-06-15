@@ -63,9 +63,11 @@ if (-not $wix) {
 $toolsDir = Join-Path $env:USERPROFILE '.dotnet\tools'
 if ($env:PATH -notlike "*$toolsDir*") { $env:PATH = "$env:PATH;$toolsDir" }
 
-# 6b. Dam bao co WiX UI extension (cho giao dien cai dat)
-Write-Host "==> Cai WiX UI extension..."
-wix extension add -g WixToolset.UI.wixext
+# 6b. Cai WiX UI extension - PHAI CUNG VERSION voi wix (vd 5.0.2), neu khong
+#     'wix extension add' se lay ban moi nhat (7.x) -> WIX0144 not found.
+$WixVer = ((& wix --version) -replace '\+.*$', '').Trim()
+Write-Host "==> Cai WiX UI extension khop wix v$WixVer..."
+wix extension add -g "WixToolset.UI.wixext/$WixVer"
 
 # 7. Dong goi MSI (kem -ext UI)
 $Msi = "gcm-$Version.msi"
