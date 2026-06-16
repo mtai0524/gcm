@@ -26,3 +26,22 @@ def test_save_config_preserves_other_lines(core, tmp_path, monkeypatch):
     assert "# comment" in text
     assert "lang = vi" in text
     assert "api_key = gsk_1" in text
+
+
+def test_set_repo_ok(core, git_repo):
+    ok, msg = core.set_repo(str(git_repo))
+    assert ok is True
+    assert msg == ""
+    assert core.REPO_ROOT == str(git_repo)
+
+
+def test_set_repo_not_a_repo(core, tmp_path):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    ok, msg = core.set_repo(str(plain))
+    assert ok is False
+    assert "git" in msg.lower()
+
+
+def test_last_repo_is_a_config_key(core):
+    assert "last_repo" in core.CONFIG_KEYS

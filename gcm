@@ -58,7 +58,7 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
-CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor")
+CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor", "last_repo")
 REPO_ROOT = None
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
@@ -222,6 +222,28 @@ def ensure_repo():
         err("khong phai git repository (chay trong thu muc repo).")
         sys.exit(1)
     REPO_ROOT = lines[1].strip() if len(lines) > 1 else None
+
+
+def set_repo(folder):
+    """Chuyen sang thu muc repo cho GUI (khong sys.exit).
+
+    Tra (ok, error_msg). Khi ok, doi cwd va set REPO_ROOT = toplevel.
+    """
+    global REPO_ROOT
+    if not folder or not os.path.isdir(folder):
+        return False, "thu muc khong ton tai"
+    res = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree", "--show-toplevel"],
+        cwd=folder, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+    )
+    lines = res.stdout.splitlines()
+    if res.returncode != 0 or not lines or lines[0].strip() != "true":
+        return False, "khong phai git repository"
+    top = lines[1].strip() if len(lines) > 1 else folder
+    os.chdir(top)
+    REPO_ROOT = top
+    return True, ""
 
 
 def changed_files():
