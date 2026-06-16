@@ -58,7 +58,7 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
-CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor")
+CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor", "last_repo")
 REPO_ROOT = None
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
@@ -90,6 +90,32 @@ def load_config():
             else:
                 cfg["api_key"] = line  # file cu: 1 dong la key
     return cfg
+
+
+def save_config(key, value):
+    """Ghi 'key = value' vao CONFIG_PATH; cap nhat tai cho neu da co.
+
+    Giu nguyen comment va cac key khac. Tao thu muc/file neu chua co.
+    """
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    lines = []
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    out, replaced = [], False
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            k = stripped.partition("=")[0].strip().lower()
+            if k == key.lower():
+                out.append(f"{key} = {value}")
+                replaced = True
+                continue
+        out.append(line)
+    if not replaced:
+        out.append(f"{key} = {value}")
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
 
 
 def cfg_bool(value):
@@ -145,6 +171,23 @@ def enable_windows_ansi():
         pass
 
 
+def is_double_clicked():
+    """True neu exe duoc mo bang double-click trong Explorer (Windows).
+
+    Explorer tao 1 console moi chi co dung process cua ta gan vao. Khi chay
+    trong terminal san co thi co >1 process. Non-Windows luon tra False.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        arr = (ctypes.c_uint32 * 2)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(arr, 2)
+        return count <= 1
+    except Exception:
+        return False
+
+
 def c(text, code):
     if not sys.stdout.isatty():
         return text
@@ -152,6 +195,8 @@ def c(text, code):
 
 
 def err(msg):
+    if sys.stderr is None:
+        return
     print(c("error: ", "31") + msg, file=sys.stderr)
 
 
@@ -198,6 +243,28 @@ def ensure_repo():
     REPO_ROOT = lines[1].strip() if len(lines) > 1 else None
 
 
+def set_repo(folder):
+    """Chuyen sang thu muc repo cho GUI (khong sys.exit).
+
+    Tra (ok, error_msg). Khi ok, doi cwd va set REPO_ROOT = toplevel.
+    """
+    global REPO_ROOT
+    if not folder or not os.path.isdir(folder):
+        return False, "thu muc khong ton tai"
+    res = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree", "--show-toplevel"],
+        cwd=folder, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+    )
+    lines = res.stdout.splitlines()
+    if res.returncode != 0 or not lines or lines[0].strip() != "true":
+        return False, "khong phai git repository"
+    top = lines[1].strip() if len(lines) > 1 else folder
+    os.chdir(top)
+    REPO_ROOT = top
+    return True, ""
+
+
 def changed_files():
     items = []
     for line in run_git(["status", "--porcelain", "-uall"]).splitlines():
@@ -212,6 +279,20 @@ def changed_files():
             rest = rest[1:-1].encode().decode("unicode_escape")
         items.append((code, rest))
     return items
+
+
+def stage_files(selected, all_changed):
+    """Stage cac file trong `selected`, unstage phan con lai trong `all_changed`.
+
+    Dam bao `git diff --staged` chi chua dung cac file nguoi dung tick.
+    """
+    selected = set(selected)
+    to_add = [p for p in all_changed if p in selected]
+    to_reset = [p for p in all_changed if p not in selected]
+    if to_add:
+        run_git(["add", "--", *to_add])
+    if to_reset:
+        run_git(["reset", "-q", "--", *to_reset], check=False)
 
 
 def status_label(code):
@@ -618,6 +699,18 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
     return msg
 
 
+def generate_message(files, vietnamese, hint, api_key, model):
+    """Tao commit message tu cac file DA stage (khong UI, khong sys.exit).
+
+    Goi smart_diff -> build_prompt -> call_groq. Raise ValueError neu thieu file.
+    """
+    if not files:
+        raise ValueError("chua chon file nao")
+    diff, skipped, _truncated = smart_diff(files)
+    system, user = build_prompt(diff, files, vietnamese, hint, skipped)
+    return call_groq(api_key, system, user, model)
+
+
 def add_coauthor(message):
     """Them trailer 'Co-authored-by: ...' vao cuoi message neu chua co.
 
@@ -683,6 +776,26 @@ def do_push():
         return False
     err("push that bai:\n" + out)
     return False
+
+
+def push_simple():
+    """Push cho GUI: tu set upstream neu thieu, khong hoi input. Tra (ok, text)."""
+    res = subprocess.run(
+        ["git", "push"], cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    out = (res.stdout + res.stderr).strip()
+    if res.returncode == 0:
+        return True, out or "push xong."
+    if "--set-upstream" in out or "no upstream" in out:
+        branch, _ = branch_status()
+        res = subprocess.run(
+            ["git", "push", "-u", "origin", branch], cwd=REPO_ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        out2 = (res.stdout + res.stderr).strip()
+        return res.returncode == 0, out2
+    return False, out
 
 
 def take_value(argv, *names):
@@ -752,6 +865,18 @@ def main():
     enable_windows_ansi()
 
     argv = sys.argv[1:]
+    if argv == ["--gui"] or (not argv and is_double_clicked()):
+        # An cua so console den khi double-click (chi Windows; an toan voi
+        # subprocess git con vi chung tu tao console rieng neu can).
+        if os.name == "nt":
+            try:
+                import ctypes
+                ctypes.windll.kernel32.FreeConsole()
+            except Exception:
+                pass
+        import gcm_gui
+        gcm_gui.run_gui(sys.modules[__name__])
+        return
     if "-h" in argv or "--help" in argv:
         print(c(LOGO, "36"))
         print(c(f"  gcm v{VERSION} — by devduide", "1"))

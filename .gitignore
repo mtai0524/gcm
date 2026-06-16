@@ -5,3 +5,4 @@ dist/
 *.spec
 *.msi
 gcm_entry.py
+.superpowers/

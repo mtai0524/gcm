@@ -41,7 +41,11 @@ Write-Host "==> Cai PyInstaller..."
 # 4. Build gcm.exe (copy sang .py cho PyInstaller on dinh)
 Write-Host "==> Build gcm.exe..."
 Copy-Item gcm gcm_entry.py -Force
-& $py -m PyInstaller --onefile --name gcm gcm_entry.py
+# gcm_gui.py da nam o thu muc goc repo; --paths . de PyInstaller tim thay no.
+& $py -m PyInstaller --onefile --name gcm `
+    --hidden-import gcm_gui `
+    --paths . `
+    gcm_entry.py
 
 # 5. Smoke test: gcm.exe -v phai in 'gcm v<Version>'
 $out = (& .\dist\gcm.exe -v) -join "`n"
