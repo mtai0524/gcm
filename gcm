@@ -262,6 +262,20 @@ def changed_files():
     return items
 
 
+def stage_files(selected, all_changed):
+    """Stage cac file trong `selected`, unstage phan con lai trong `all_changed`.
+
+    Dam bao `git diff --staged` chi chua dung cac file nguoi dung tick.
+    """
+    selected = set(selected)
+    to_add = [p for p in all_changed if p in selected]
+    to_reset = [p for p in all_changed if p not in selected]
+    if to_add:
+        run_git(["add", "--", *to_add])
+    if to_reset:
+        run_git(["reset", "-q", "--", *to_reset], check=False)
+
+
 def status_label(code):
     if code == "??":
         return c("new      ", "36")

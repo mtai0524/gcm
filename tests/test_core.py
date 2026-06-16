@@ -1,3 +1,10 @@
+import subprocess
+
+
+def _write(repo, name, text):
+    (repo / name).write_text(text, encoding="utf-8")
+
+
 def test_module_loads(core):
     assert core.VERSION
     assert callable(core.changed_files)
@@ -45,3 +52,18 @@ def test_set_repo_not_a_repo(core, tmp_path):
 
 def test_last_repo_is_a_config_key(core):
     assert "last_repo" in core.CONFIG_KEYS
+
+
+def test_stage_files_adds_selected_and_resets_rest(core, git_repo):
+    _write(git_repo, "a.txt", "aaa")
+    _write(git_repo, "b.txt", "bbb")
+    all_changed = [p for _, p in core.changed_files()]
+    assert set(all_changed) == {"a.txt", "b.txt"}
+
+    core.stage_files(["a.txt"], all_changed)
+
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=git_repo, capture_output=True, text=True,
+    ).stdout.split()
+    assert staged == ["a.txt"]
