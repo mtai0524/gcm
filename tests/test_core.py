@@ -67,3 +67,31 @@ def test_stage_files_adds_selected_and_resets_rest(core, git_repo):
         cwd=git_repo, capture_output=True, text=True,
     ).stdout.split()
     assert staged == ["a.txt"]
+
+
+def test_generate_message_uses_staged_diff(core, git_repo, monkeypatch):
+    _write(git_repo, "a.txt", "hello world")
+    core.stage_files(["a.txt"], ["a.txt"])
+
+    captured = {}
+
+    def fake_call_groq(api_key, system, user, model=None, temperature=0.3):
+        captured["user"] = user
+        captured["api_key"] = api_key
+        return "feat: add a.txt"
+
+    monkeypatch.setattr(core, "call_groq", fake_call_groq)
+
+    msg = core.generate_message(["a.txt"], vietnamese=False, hint="add file",
+                                api_key="gsk_test", model="m")
+    assert msg == "feat: add a.txt"
+    assert "hello world" in captured["user"]  # real staged diff fed to prompt
+    assert "add file" in captured["user"]      # hint included
+    assert captured["api_key"] == "gsk_test"
+
+
+def test_generate_message_empty_selection_raises(core, git_repo):
+    import pytest
+    with pytest.raises(ValueError):
+        core.generate_message([], vietnamese=False, hint=None,
+                              api_key="k", model="m")

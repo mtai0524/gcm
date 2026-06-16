@@ -680,6 +680,18 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
     return msg
 
 
+def generate_message(files, vietnamese, hint, api_key, model):
+    """Tao commit message tu cac file DA stage (khong UI, khong sys.exit).
+
+    Goi smart_diff -> build_prompt -> call_groq. Raise ValueError neu thieu file.
+    """
+    if not files:
+        raise ValueError("chua chon file nao")
+    diff, skipped, _truncated = smart_diff(files)
+    system, user = build_prompt(diff, files, vietnamese, hint, skipped)
+    return call_groq(api_key, system, user, model)
+
+
 def add_coauthor(message):
     """Them trailer 'Co-authored-by: ...' vao cuoi message neu chua co.
 
@@ -745,6 +757,26 @@ def do_push():
         return False
     err("push that bai:\n" + out)
     return False
+
+
+def push_simple():
+    """Push cho GUI: tu set upstream neu thieu, khong hoi input. Tra (ok, text)."""
+    res = subprocess.run(
+        ["git", "push"], cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    out = (res.stdout + res.stderr).strip()
+    if res.returncode == 0:
+        return True, out or "push xong."
+    if "--set-upstream" in out or "no upstream" in out:
+        branch, _ = branch_status()
+        res = subprocess.run(
+            ["git", "push", "-u", "origin", branch], cwd=REPO_ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        out2 = (res.stdout + res.stderr).strip()
+        return res.returncode == 0, out2
+    return False, out
 
 
 def take_value(argv, *names):
