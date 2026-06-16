@@ -80,6 +80,26 @@ Muốn cài một phát trên Windows (không cần Git Bash, không cần tự 
 > "More info" → "Run anyway". Cập nhật bằng cách tải MSI mới hơn (lệnh tự cập
 > nhật `gcm -u` chỉ dùng được cho bản cài bằng git clone).
 
+#### Tự build file MSI
+
+Muốn tạo file `.msi` từ mã nguồn (ví dụ sau khi sửa code)? Mở **PowerShell ở
+thư mục gốc repo** rồi chạy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+```
+
+Lệnh này build `gcm.exe` bằng PyInstaller và đóng gói `gcm-X.Y.Z.msi` vào thư
+mục gốc repo. Cần cài sẵn (một lần):
+
+```powershell
+winget install -e --id Python.Python.3.12      # Python 3
+winget install -e --id Microsoft.DotNet.SDK.8  # .NET SDK (cho WiX)
+```
+
+Script tự cài PyInstaller và WiX. Bấm đúp file MSI để cài, hoặc upload lên
+GitHub Releases.
+
 ---
 
 ## 2. Update
