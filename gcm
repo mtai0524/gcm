@@ -171,6 +171,23 @@ def enable_windows_ansi():
         pass
 
 
+def is_double_clicked():
+    """True neu exe duoc mo bang double-click trong Explorer (Windows).
+
+    Explorer tao 1 console moi chi co dung process cua ta gan vao. Khi chay
+    trong terminal san co thi co >1 process. Non-Windows luon tra False.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        arr = (ctypes.c_uint32 * 2)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(arr, 2)
+        return count <= 1
+    except Exception:
+        return False
+
+
 def c(text, code):
     if not sys.stdout.isatty():
         return text

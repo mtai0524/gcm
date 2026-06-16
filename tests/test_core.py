@@ -95,3 +95,8 @@ def test_generate_message_empty_selection_raises(core, git_repo):
     with pytest.raises(ValueError):
         core.generate_message([], vietnamese=False, hint=None,
                               api_key="k", model="m")
+
+
+def test_is_double_clicked_false_on_non_windows(core, monkeypatch):
+    monkeypatch.setattr(core.os, "name", "posix")
+    assert core.is_double_clicked() is False
