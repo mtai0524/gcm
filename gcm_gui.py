@@ -7,7 +7,7 @@ Nhan `core` (module gcm) qua run_gui(core); KHONG import gcm truc tiep
 import os
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 
 def run_gui(core):
@@ -149,10 +149,11 @@ class GcmApp(tk.Tk):
         vietnamese = self.lang_var.get() == "vi"
         hint = self.hint_var.get().strip() or None
         model = self.core.MODEL
+        all_paths = self._all_paths()  # capture tren main thread (tranh race)
 
         def work():
             try:
-                self.core.stage_files(selected, self._all_paths())
+                self.core.stage_files(selected, all_paths)
                 msg = self.core.generate_message(
                     selected, vietnamese, hint, api_key, model)
                 self.after(0, lambda: self._on_generated(msg))
