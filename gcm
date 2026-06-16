@@ -863,6 +863,18 @@ def main():
     enable_windows_ansi()
 
     argv = sys.argv[1:]
+    if argv == ["--gui"] or (not argv and is_double_clicked()):
+        # An cua so console den khi double-click (chi Windows; an toan voi
+        # subprocess git con vi chung tu tao console rieng neu can).
+        if os.name == "nt":
+            try:
+                import ctypes
+                ctypes.windll.kernel32.FreeConsole()
+            except Exception:
+                pass
+        import gcm_gui
+        gcm_gui.run_gui(sys.modules[__name__])
+        return
     if "-h" in argv or "--help" in argv:
         print(c(LOGO, "36"))
         print(c(f"  gcm v{VERSION} — by devduide", "1"))
