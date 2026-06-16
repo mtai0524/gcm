@@ -100,3 +100,8 @@ def test_generate_message_empty_selection_raises(core, git_repo):
 def test_is_double_clicked_false_on_non_windows(core, monkeypatch):
     monkeypatch.setattr(core.os, "name", "posix")
     assert core.is_double_clicked() is False
+
+
+def test_err_no_crash_when_stderr_none(core, monkeypatch):
+    monkeypatch.setattr(core.sys, "stderr", None)
+    core.err("boom")  # must not raise

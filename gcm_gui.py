@@ -119,7 +119,12 @@ class GcmApp(tk.Tk):
         for w in self.files_frame.winfo_children():
             w.destroy()
         self.file_vars = []
-        for code, path in self.core.changed_files():
+        try:
+            files = self.core.changed_files()
+        except BaseException as e:  # noqa: BLE001 - core run_git co the sys.exit
+            self._set_status(f"Lỗi đọc file thay đổi: {e}", "#c00")
+            return
+        for code, path in files:
             var = tk.BooleanVar(value=True)
             label = f"{code.strip() or '?':<2} {path}"
             ttk.Checkbutton(self.files_frame, text=label,
@@ -157,7 +162,7 @@ class GcmApp(tk.Tk):
                 msg = self.core.generate_message(
                     selected, vietnamese, hint, api_key, model)
                 self.after(0, lambda: self._on_generated(msg))
-            except Exception as e:  # noqa: BLE001 - hien thi moi loi cho user
+            except BaseException as e:  # noqa: BLE001 - bat ca SystemExit tu core err() de hien loi
                 self.after(0, lambda: self._on_error(str(e)))
 
         threading.Thread(target=work, daemon=True).start()
