@@ -171,19 +171,84 @@ def enable_windows_ansi():
         pass
 
 
+def _launcher_process_name():
+    """Ten tien trinh da khoi chay ta, bo qua cac 'gcm.exe' bootloader (Windows).
+
+    PyInstaller --onefile chay 2 tien trinh cung ten gcm.exe (bootloader cha +
+    con). Di nguoc cay tien trinh, bo qua chung, tra ve ten (lowercase) cua to
+    tien dau tien khac gcm.exe: 'explorer.exe' (double-click) hay 'powershell.exe'
+    / 'cmd.exe' / ... (terminal). Tra None neu khong xac dinh duoc.
+    """
+    import ctypes
+
+    class PROCESSENTRY32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", ctypes.c_uint32),
+            ("cntUsage", ctypes.c_uint32),
+            ("th32ProcessID", ctypes.c_uint32),
+            ("th32DefaultHeapID", ctypes.c_void_p),
+            ("th32ModuleID", ctypes.c_uint32),
+            ("cntThreads", ctypes.c_uint32),
+            ("th32ParentProcessID", ctypes.c_uint32),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", ctypes.c_uint32),
+            ("szExeFile", ctypes.c_char * 260),
+        ]
+
+    k = ctypes.windll.kernel32
+    k.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    k.CreateToolhelp32Snapshot.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    k.Process32First.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32)]
+    k.Process32Next.argtypes = [ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32)]
+
+    snap = k.CreateToolhelp32Snapshot(0x00000002, 0)  # TH32CS_SNAPPROCESS
+    if not snap or snap == ctypes.c_void_p(-1).value:
+        return None
+    try:
+        entry = PROCESSENTRY32()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        info = {}  # pid -> (parent_pid, exe_name_lower)
+        if k.Process32First(snap, ctypes.byref(entry)):
+            while True:
+                name = entry.szExeFile.decode("ascii", "replace").lower()
+                info[entry.th32ProcessID] = (entry.th32ParentProcessID, name)
+                if not k.Process32Next(snap, ctypes.byref(entry)):
+                    break
+    finally:
+        k.CloseHandle(snap)
+
+    cur, seen = os.getpid(), set()
+    while cur in info and cur not in seen:
+        seen.add(cur)
+        parent_pid, _ = info[cur]
+        parent = info.get(parent_pid)
+        if parent is None:
+            return None
+        if parent[1] == "gcm.exe":
+            cur = parent_pid
+            continue
+        return parent[1]
+    return None
+
+
 def is_double_clicked():
     """True neu exe duoc mo bang double-click trong Explorer (Windows).
 
-    Explorer tao 1 console moi chi co dung process cua ta gan vao. Khi chay
-    trong terminal san co thi co >1 process. Non-Windows luon tra False.
+    Cach chinh: xem to tien khoi chay co phai explorer.exe khong (chinh xac,
+    khong phu thuoc so dem). Fallback: dem tien trinh gan console - voi
+    --onefile, double-click thuong cho 1-2 (chi cac gcm.exe), terminal >2 vi
+    co them shell. Non-Windows luon tra False.
     """
     if os.name != "nt":
         return False
     try:
         import ctypes
-        arr = (ctypes.c_uint32 * 2)()
-        count = ctypes.windll.kernel32.GetConsoleProcessList(arr, 2)
-        return count <= 1
+        launcher = _launcher_process_name()
+        if launcher is not None:
+            return launcher == "explorer.exe"
+        arr = (ctypes.c_uint32 * 4)()
+        count = ctypes.windll.kernel32.GetConsoleProcessList(arr, 4)
+        return 0 < count <= 2
     except Exception:
         return False
 

@@ -80,6 +80,26 @@ Prefer a one-click install on Windows (no Git Bash, no manual Python)?
 > "More info" → "Run anyway". Update by downloading a newer MSI (`gcm -u`
 > self-update only works for the git-cloned install).
 
+#### Build the MSI yourself
+
+Want to produce the `.msi` from source (e.g. after editing the code)? Open
+**PowerShell in the repo root** and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
+```
+
+This builds `gcm.exe` with PyInstaller and packages `gcm-X.Y.Z.msi` into the
+repo root. Requirements (installed once):
+
+```powershell
+winget install -e --id Python.Python.3.12      # Python 3
+winget install -e --id Microsoft.DotNet.SDK.8  # .NET SDK (for WiX)
+```
+
+The script auto-installs PyInstaller and the WiX toolset. Double-click the
+resulting MSI to install, or upload it to GitHub Releases.
+
 ---
 
 ## 2. Update
