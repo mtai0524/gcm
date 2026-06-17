@@ -1,0 +1,36 @@
+# ============================================================
+# gcm config mau  ->  copy sang ~/.config/gcm/config roi sua
+#   cp config.example ~/.config/gcm/config
+# Dang 'key = value'. Dong bat dau bang # la comment.
+# Xem config dang dung:  gcm config
+# ============================================================
+
+# --- API key (BAT BUOC) ---
+# Groq API key (free). Lay tai: https://console.groq.com/keys
+# Cung co the dat qua bien moi truong GROQ_API_KEY (uu tien hon dong nay).
+api_key = gsk_...
+
+# --- Ngon ngu message mac dinh: vi | en ---
+lang = vi
+
+# --- Model (mac dinh: llama-3.3-70b-versatile) ---
+# model = llama-3.3-70b-versatile
+
+# --- Chon file kieu TUI (mui ten + space): true | false ---
+# tui = true
+
+# --- Tu push sau commit: ask | always | never ---
+# push = ask
+
+# --- Collaborator credit khi push tu gcm ---
+# Them trailer 'Co-authored-by: ...' vao commit (GitHub hien avatar coauthor).
+# Mac dinh la devduide. Doi thanh ten/email cua ban, hoac 'off' de tat han.
+coauthor = devduide <devduide@users.noreply.github.com>
+# coauthor = off
+
+# --- System prompt (cach AI viet commit message) ---
+# Override ngan 1 dong tai day. Placeholder {lang} = cau chi dinh ngon ngu.
+# Voi prompt dai nhieu dong, dung file rieng:
+#   cp system_prompt.example.md ~/.config/gcm/system_prompt.md
+# Uu tien: file system_prompt.md  >  dong system_prompt duoi day  >  mac dinh.
+# system_prompt = Viet commit ngan gon theo Conventional Commits. {lang}

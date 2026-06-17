@@ -55,6 +55,15 @@ fi
 
 # 3. Cấu hình API key
 mkdir -p "$CONFIG_DIR"
+
+# Copy file mẫu để người dùng dễ cấu hình (không đè file đang dùng)
+for ex in config.example system_prompt.example.md; do
+  if [ -f "$SCRIPT_DIR/$ex" ]; then
+    cp -f "$SCRIPT_DIR/$ex" "$CONFIG_DIR/$ex"
+  fi
+done
+echo "  [ok] file mẫu: $CONFIG_DIR/config.example, $CONFIG_DIR/system_prompt.example.md"
+
 if [ -n "$GROQ_API_KEY" ] || [ -s "$CONFIG_DIR/config" ]; then
   echo "  [ok] API key đã có (env hoặc $CONFIG_DIR/config)"
 else

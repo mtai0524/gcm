@@ -174,9 +174,42 @@ lang = vi              # ngôn ngữ message mặc định
 model = llama-3.3-70b-versatile
 tui = true             # mặc định chọn file kiểu TUI
 push = ask             # ask | always | never
+coauthor = devduide <devduide@users.noreply.github.com>  # off để tắt
+system_prompt = ...    # override ngắn cách AI viết message ({lang} = ngôn ngữ)
 ```
 
 Cờ CLI luôn đè config. File cũ chỉ chứa 1 dòng key vẫn chạy bình thường.
+
+Có sẵn **file mẫu** để copy nhanh: `config.example` và `system_prompt.example.md`
+(install.sh tự copy vào `~/.config/gcm/`):
+
+```bash
+cp config.example ~/.config/gcm/config            # rồi sửa api_key, coauthor...
+cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # rồi sửa prompt
+```
+
+#### Coauthor (collab cùng devduide)
+
+Khi **push từ gcm**, gcm thêm trailer `Co-authored-by:` để ghi credit (GitHub hiện
+avatar coauthor). Mặc định là `devduide`. Đổi tên/email của bạn, hoặc `coauthor = off`
+để tắt hẳn:
+
+```ini
+coauthor = Tên Bạn <ban@example.com>
+# coauthor = off
+```
+
+#### System prompt (cách AI viết message)
+
+gcm chọn system prompt theo thứ tự ưu tiên:
+
+1. File `~/.config/gcm/system_prompt.md` — cho prompt dài nhiều dòng (ưu tiên cao nhất)
+2. Dòng `system_prompt = ...` trong config — override ngắn 1 dòng
+3. Prompt mặc định built-in
+
+Placeholder `{lang}` trong prompt sẽ được thay bằng câu chỉ định ngôn ngữ theo
+`--vi`/`--en`; nếu prompt không có `{lang}`, câu ngôn ngữ tự được nối vào cuối.
+`gcm config` cho biết đang dùng nguồn nào.
 
 `gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn bằng số:
 ```

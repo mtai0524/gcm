@@ -36,10 +36,14 @@ Config (~/.config/gcm/config, dang key = value):
   tui = true | false     mac dinh chon file kieu TUI
   push = ask | always | never
   coauthor = Ten <email> them 'Co-authored-by' khi push tu gcm (off de tat)
+  system_prompt = ...    override cach AI viet message (ngan, 1 dong)
+System prompt (uu tien): file ~/.config/gcm/system_prompt.md > config
+  'system_prompt' > mac dinh. Placeholder {lang} = cau chi dinh ngon ngu.
 Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -58,12 +62,111 @@ API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
-CONFIG_KEYS = ("api_key", "lang", "model", "tui", "push", "coauthor", "last_repo")
+SYSTEM_PROMPT_PATH = os.path.expanduser("~/.config/gcm/system_prompt.md")
+CONFIG_KEYS = (
+    "api_key", "lang", "model", "tui", "push", "coauthor", "last_repo",
+    "system_prompt",
+)
 REPO_ROOT = None
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
 # Co the doi/tat qua config: coauthor = Ten <email>  hoac  coauthor = off
 DEFAULT_COAUTHOR = "devduide <devduide@users.noreply.github.com>"
+
+# System prompt mac dinh dieu khien cach AI viet commit message.
+# Nguoi dung co the ghi de, uu tien tu cao xuong thap:
+#   1) file ~/.config/gcm/system_prompt.md  (prompt dai nhieu dong)
+#   2) config 'system_prompt = ...'          (override ngan 1 dong)
+#   3) DEFAULT_SYSTEM_PROMPT ben duoi         (mac dinh)
+# Placeholder {lang} se duoc thay bang cau chi dinh ngon ngu (vi/en); neu
+# prompt tuy chinh khong co {lang}, cau ngon ngu se duoc noi vao cuoi.
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an expert developer writing git commit messages. "
+    "Follow the Conventional Commits spec strictly: "
+    "type(scope): short summary in imperative mood. "
+    "Allowed types: feat, fix, docs, style, refactor, perf, test, "
+    "build, ci, chore, revert. "
+    # ---- summary line rules ----
+    "IMPORTANT - summary line rules: "
+    "Read the ENTIRE diff to understand the overall intent of the change. "
+    "Format strictly as 'type(scope): summary'. "
+    # ---- scope ----
+    "The scope is a SHORT feature/module/domain name in kebab-case, derived "
+    "from WHAT the change is about - e.g. 'qc-nav', 'qc-role', 'activity', "
+    "'auth', 'menu-bar'. Derive it from the feature or domain area, NEVER "
+    "from a raw file name, path, or class name. Use a single scope; if the "
+    "change spans several areas pick the dominant one, or omit the scope "
+    "entirely (just 'type: summary'). "
+    # ---- summary text ----
+    "The summary describes the functional intent in plain language (aim "
+    "60-90 chars, hard max 110): say WHAT the change accomplishes or what "
+    "behaviour it adds/fixes, NOT which files were edited. "
+    "Be SPECIFIC and informative: name the 1-2 most important concrete "
+    "changes in the summary itself (e.g. what was removed, what endpoint or "
+    "behaviour changed), so the headline alone tells the real story. "
+    "BANNED vague fillers - never end with or rely on empty words like "
+    "'and functionality', 'and improvements', 'and more', 'various changes', "
+    "'and updates', 'and cleanup'. Replace them with the actual change. "
+    "GOOD (specific): 'refactor(menu-bar): drop bubble/controls toggles and "
+    "move upload to cloudinary'. "
+    "BAD (vague): 'refactor(menu-bar): simplify menu bar layout and "
+    "functionality'. "
+    "Do NOT put file names, component names, or low-level identifiers "
+    "(props, variables, endpoints) in the summary - those belong in the body. "
+    "GOOD examples - match this exact style: "
+    "'fix(qc-nav): persist QC nav group expand/collapse state across navigation', "
+    "'refactor(qc-role): sync UI with QC user-management V2 and add audit logging', "
+    "'feat(activity): track QC data-input, approval and measurement events', "
+    "'feat(qc): add object and IP columns'. "
+    # ---- body rules ----
+    "Then add a blank line and a SHORT body of bullet points (each starting "
+    "with '- ') covering ONLY the main, meaningful changes. "
+    "Aim for 2-4 bullets (max 5); do NOT list every tiny edit. Merge "
+    "related changes into one bullet and drop trivial/minor ones - the "
+    "reader wants the gist, not a line-by-line changelog. "
+    "Keep each bullet to a short phrase (ideally under ~10 words), starting "
+    "with a past-tense verb (Added, Removed, Updated, Renamed, Fixed, ...). "
+    "Do NOT repeat the same change in two bullets, and do NOT restate the "
+    "summary line. "
+    "GOOD bullet examples (concise): "
+    "'- Removed unused bubble/controls toggle buttons', "
+    "'- Switched file-upload to the cloudinary endpoint', "
+    "'- Fixed handle position to a fixed 10px offset'. "
+    "Do NOT invent changes absent from the diff, and do NOT pad with vague "
+    "filler like 'for better readability' or 'improve UX'. "
+    "Omit the body entirely for trivial one-line changes (typo, version "
+    "bump, etc). "
+    "{lang} "
+    "Output ONLY the commit message, no markdown fences, no preamble."
+)
+
+
+def get_system_prompt(vietnamese):
+    """Tra ve system prompt da ap dung ngon ngu.
+
+    Uu tien: file system_prompt.md > config 'system_prompt' > mac dinh.
+    """
+    lang = "Viet bang TIENG VIET." if vietnamese else "Write in ENGLISH."
+
+    template = None
+    if os.path.exists(SYSTEM_PROMPT_PATH):
+        try:
+            with open(SYSTEM_PROMPT_PATH, encoding="utf-8",
+                      errors="replace") as f:
+                raw = f.read()
+            # Bo cac khoi comment HTML <!-- ... --> (ghi chu cho nguoi dung)
+            template = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL).strip()
+            template = template or None
+        except OSError:
+            template = None
+    if template is None:
+        template = CONFIG.get("system_prompt", "").strip() or None
+    if template is None:
+        template = DEFAULT_SYSTEM_PROMPT
+
+    if "{lang}" in template:
+        return template.replace("{lang}", lang)
+    return template.rstrip() + " " + lang
 
 
 def load_config():
@@ -137,7 +240,17 @@ def show_config():
             continue
         if k == "api_key" and len(v) > 8:
             v = v[:7] + "..." + v[-4:]
+        if k == "system_prompt" and len(v) > 60:
+            v = v[:57] + "..."
         print(f"  {k} = {v}")
+    # Nguon system prompt dang dung
+    if os.path.exists(SYSTEM_PROMPT_PATH):
+        sp_src = f"file ({SYSTEM_PROMPT_PATH})"
+    elif CONFIG.get("system_prompt", "").strip():
+        sp_src = "config 'system_prompt'"
+    else:
+        sp_src = "mac dinh (built-in)"
+    print(c("system prompt: ", "1") + sp_src)
     print(c("vi du day du:", "90"))
     print(c("  api_key = gsk_...", "90"))
     print(c("  lang = vi          # mac dinh --vi", "90"))
@@ -146,6 +259,8 @@ def show_config():
     print(c("  push = ask         # ask | always | never", "90"))
     print(c(f"  coauthor = {DEFAULT_COAUTHOR}  # them khi push (off de tat)",
             "90"))
+    print(c("  system_prompt = ...  # override ngan; hoac dat file "
+            f"{SYSTEM_PROMPT_PATH}", "90"))
     sys.exit(0)
 
 
@@ -626,70 +741,8 @@ def smart_diff(files, from_head=False):
 
 
 def build_prompt(diff, files, vietnamese, hint=None, skipped=None):
-    lang = (
-        "Viet bang TIENG VIET." if vietnamese
-        else "Write in ENGLISH."
-    )
     files_list = "\n".join(files) if files else "(unknown)"
-    system = (
-        "You are an expert developer writing git commit messages. "
-        "Follow the Conventional Commits spec strictly: "
-        "type(scope): short summary in imperative mood. "
-        "Allowed types: feat, fix, docs, style, refactor, perf, test, "
-        "build, ci, chore, revert. "
-        # ---- summary line rules ----
-        "IMPORTANT - summary line rules: "
-        "Read the ENTIRE diff to understand the overall intent of the change. "
-        "Format strictly as 'type(scope): summary'. "
-        # ---- scope ----
-        "The scope is a SHORT feature/module/domain name in kebab-case, derived "
-        "from WHAT the change is about - e.g. 'qc-nav', 'qc-role', 'activity', "
-        "'auth', 'menu-bar'. Derive it from the feature or domain area, NEVER "
-        "from a raw file name, path, or class name. Use a single scope; if the "
-        "change spans several areas pick the dominant one, or omit the scope "
-        "entirely (just 'type: summary'). "
-        # ---- summary text ----
-        "The summary describes the functional intent in plain language (aim "
-        "60-90 chars, hard max 110): say WHAT the change accomplishes or what "
-        "behaviour it adds/fixes, NOT which files were edited. "
-        "Be SPECIFIC and informative: name the 1-2 most important concrete "
-        "changes in the summary itself (e.g. what was removed, what endpoint or "
-        "behaviour changed), so the headline alone tells the real story. "
-        "BANNED vague fillers - never end with or rely on empty words like "
-        "'and functionality', 'and improvements', 'and more', 'various changes', "
-        "'and updates', 'and cleanup'. Replace them with the actual change. "
-        "GOOD (specific): 'refactor(menu-bar): drop bubble/controls toggles and "
-        "move upload to cloudinary'. "
-        "BAD (vague): 'refactor(menu-bar): simplify menu bar layout and "
-        "functionality'. "
-        "Do NOT put file names, component names, or low-level identifiers "
-        "(props, variables, endpoints) in the summary - those belong in the body. "
-        "GOOD examples - match this exact style: "
-        "'fix(qc-nav): persist QC nav group expand/collapse state across navigation', "
-        "'refactor(qc-role): sync UI with QC user-management V2 and add audit logging', "
-        "'feat(activity): track QC data-input, approval and measurement events', "
-        "'feat(qc): add object and IP columns'. "
-        # ---- body rules ----
-        "Then add a blank line and a SHORT body of bullet points (each starting "
-        "with '- ') covering ONLY the main, meaningful changes. "
-        "Aim for 2-4 bullets (max 5); do NOT list every tiny edit. Merge "
-        "related changes into one bullet and drop trivial/minor ones - the "
-        "reader wants the gist, not a line-by-line changelog. "
-        "Keep each bullet to a short phrase (ideally under ~10 words), starting "
-        "with a past-tense verb (Added, Removed, Updated, Renamed, Fixed, ...). "
-        "Do NOT repeat the same change in two bullets, and do NOT restate the "
-        "summary line. "
-        "GOOD bullet examples (concise): "
-        "'- Removed unused bubble/controls toggle buttons', "
-        "'- Switched file-upload to the cloudinary endpoint', "
-        "'- Fixed handle position to a fixed 10px offset'. "
-        "Do NOT invent changes absent from the diff, and do NOT pad with vague "
-        "filler like 'for better readability' or 'improve UX'. "
-        "Omit the body entirely for trivial one-line changes (typo, version "
-        "bump, etc). "
-        f"{lang} "
-        "Output ONLY the commit message, no markdown fences, no preamble."
-    )
+    system = get_system_prompt(vietnamese)
     hint_block = (
         f"Extra context from the author (use it, it is important):\n{hint}\n\n"
         if hint else ""

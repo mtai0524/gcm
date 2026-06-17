@@ -105,3 +105,47 @@ def test_is_double_clicked_false_on_non_windows(core, monkeypatch):
 def test_err_no_crash_when_stderr_none(core, monkeypatch):
     monkeypatch.setattr(core.sys, "stderr", None)
     core.err("boom")  # must not raise
+
+
+def test_system_prompt_is_a_config_key(core):
+    assert "system_prompt" in core.CONFIG_KEYS
+
+
+def test_system_prompt_default_applies_lang(core, monkeypatch):
+    monkeypatch.setattr(core, "SYSTEM_PROMPT_PATH", "/nonexistent/sp.md")
+    monkeypatch.setattr(core, "CONFIG", {})
+    vi = core.get_system_prompt(True)
+    en = core.get_system_prompt(False)
+    assert "{lang}" not in vi and "{lang}" not in en
+    assert "TIENG VIET" in vi
+    assert "ENGLISH" in en
+
+
+def test_system_prompt_config_override(core, monkeypatch):
+    monkeypatch.setattr(core, "SYSTEM_PROMPT_PATH", "/nonexistent/sp.md")
+    monkeypatch.setattr(core, "CONFIG", {"system_prompt": "Be terse. {lang}"})
+    assert core.get_system_prompt(True) == "Be terse. Viet bang TIENG VIET."
+
+
+def test_system_prompt_config_without_placeholder_appends_lang(core, monkeypatch):
+    monkeypatch.setattr(core, "SYSTEM_PROMPT_PATH", "/nonexistent/sp.md")
+    monkeypatch.setattr(core, "CONFIG", {"system_prompt": "Be terse."})
+    assert core.get_system_prompt(False) == "Be terse. Write in ENGLISH."
+
+
+def test_system_prompt_file_wins_over_config(core, tmp_path, monkeypatch):
+    sp = tmp_path / "system_prompt.md"
+    sp.write_text("<!-- note -->\nFrom file. {lang}\n", encoding="utf-8")
+    monkeypatch.setattr(core, "SYSTEM_PROMPT_PATH", str(sp))
+    monkeypatch.setattr(core, "CONFIG", {"system_prompt": "From config. {lang}"})
+    out = core.get_system_prompt(True)
+    assert out == "From file. Viet bang TIENG VIET."  # comment stripped, file wins
+
+
+def test_system_prompt_empty_file_falls_back_to_default(core, tmp_path, monkeypatch):
+    sp = tmp_path / "system_prompt.md"
+    sp.write_text("<!-- only a comment -->\n   \n", encoding="utf-8")
+    monkeypatch.setattr(core, "SYSTEM_PROMPT_PATH", str(sp))
+    monkeypatch.setattr(core, "CONFIG", {})
+    out = core.get_system_prompt(False)
+    assert "Conventional Commits" in out  # fell back to DEFAULT_SYSTEM_PROMPT

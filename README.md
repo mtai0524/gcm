@@ -174,9 +174,42 @@ lang = vi              # default message language
 model = llama-3.3-70b-versatile
 tui = true             # default to TUI file picker
 push = ask             # ask | always | never
+coauthor = devduide <devduide@users.noreply.github.com>  # off to disable
+system_prompt = ...    # short override of how the AI writes ({lang} = language)
 ```
 
 CLI flags override config. Old single-line key files still work.
+
+**Example files** are provided to copy from: `config.example` and
+`system_prompt.example.md` (install.sh copies them into `~/.config/gcm/`):
+
+```bash
+cp config.example ~/.config/gcm/config            # then edit api_key, coauthor...
+cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # then edit the prompt
+```
+
+#### Coauthor (collaborate with devduide)
+
+When you **push from gcm**, it appends a `Co-authored-by:` trailer so the commit
+credits a collaborator (GitHub shows the coauthor avatar). Defaults to `devduide`.
+Change it to your own name/email, or set `coauthor = off` to disable entirely:
+
+```ini
+coauthor = Your Name <you@example.com>
+# coauthor = off
+```
+
+#### System prompt (how the AI writes messages)
+
+gcm picks the system prompt in priority order:
+
+1. File `~/.config/gcm/system_prompt.md` — for long multi-line prompts (highest priority)
+2. `system_prompt = ...` line in config — short one-line override
+3. Built-in default prompt
+
+A `{lang}` placeholder in the prompt is replaced with the language instruction per
+`--vi`/`--en`; if the prompt has no `{lang}`, the language line is appended. Run
+`gcm config` to see which source is active.
 
 `gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick by number:
 ```
