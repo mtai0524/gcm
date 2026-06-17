@@ -62,6 +62,10 @@ function gcm { py "$HOME\tools\gcm\gcm" @args }
 gcm -h
 ```
 > `py` lỗi thì đổi `py` → `python` trong dòng `function gcm`.
+>
+> `. $PROFILE` báo *"running scripts is disabled on this system"* thì cho phép
+> chạy script local một lần: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+> (gõ `Y`), rồi chạy lại `. $PROFILE`.
 </details>
 
 **API key** — đọc theo thứ tự: env `GROQ_API_KEY` → file `~/.config/gcm/config`
@@ -75,6 +79,22 @@ Muốn cài một phát trên Windows (không cần Git Bash, không cần tự 
 2. Tải file `gcm-X.Y.Z.msi` mới nhất.
 3. Chạy nó. Trình cài tự thêm `gcm` vào `PATH` hệ thống.
 4. Mở terminal **mới** (PowerShell hoặc CMD) rồi gõ `gcm -h`.
+
+> Nếu `gcm` vẫn ra alias built-in của PowerShell (bước cấu hình profile không
+> chạy), tự thiết lập bằng tay — chạy trong **PowerShell**:
+>
+> ```powershell
+> # cho phép chạy script local một lần, nếu . $PROFILE bị chặn
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # gõ Y
+>
+> if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
+> Add-Content $PROFILE @'
+>
+> if (Test-Path Alias:gcm) { Remove-Item Alias:gcm -Force }
+> function gcm { & "$env:LOCALAPPDATA\Programs\gcm\gcm.exe" @args }
+> '@
+> . $PROFILE
+> ```
 
 > MSI chưa ký số nên Windows SmartScreen có thể cảnh báo lần đầu — chọn
 > "More info" → "Run anyway". Cập nhật bằng cách tải MSI mới hơn (lệnh tự cập

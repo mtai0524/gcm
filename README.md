@@ -62,6 +62,10 @@ function gcm { py "$HOME\tools\gcm\gcm" @args }
 gcm -h
 ```
 > If `py` fails, change `py` → `python` in the `function gcm` line.
+>
+> If `. $PROFILE` errors with *"running scripts is disabled on this system"*,
+> allow local scripts once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+> (answer `Y`), then re-run `. $PROFILE`.
 </details>
 
 **API key** — resolved in order: env `GROQ_API_KEY` → file `~/.config/gcm/config`
@@ -75,6 +79,22 @@ Prefer a one-click install on Windows (no Git Bash, no manual Python)?
 2. Download the latest `gcm-X.Y.Z.msi`.
 3. Run it. The installer adds `gcm` to your system `PATH`.
 4. Open a **new** terminal (PowerShell or CMD) and run `gcm -h`.
+
+> If `gcm` still resolves to the built-in PowerShell alias (the profile step
+> didn't run), set it up by hand — run in **PowerShell**:
+>
+> ```powershell
+> # allow local scripts once, if . $PROFILE is blocked
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # answer Y
+>
+> if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
+> Add-Content $PROFILE @'
+>
+> if (Test-Path Alias:gcm) { Remove-Item Alias:gcm -Force }
+> function gcm { & "$env:LOCALAPPDATA\Programs\gcm\gcm.exe" @args }
+> '@
+> . $PROFILE
+> ```
 
 > The MSI is unsigned, so Windows SmartScreen may warn on first run — choose
 > "More info" → "Run anyway". Update by downloading a newer MSI (`gcm -u`
