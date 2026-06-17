@@ -8,7 +8,8 @@
 # --- API key (BAT BUOC) ---
 # Groq API key (free). Lay tai: https://console.groq.com/keys
 # Cung co the dat qua bien moi truong GROQ_API_KEY (uu tien hon dong nay).
-api_key = gsk_...
+# Bo dau '#' o dong duoi roi dan key cua ban vao:
+# api_key = gsk_...
 
 # --- Ngon ngu message mac dinh: vi | en ---
 lang = vi

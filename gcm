@@ -49,7 +49,7 @@ import sys
 import urllib.error
 import urllib.request
 
-VERSION = "2.1.1"
+VERSION = "2.2.0"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -167,6 +167,69 @@ def get_system_prompt(vietnamese):
     if "{lang}" in template:
         return template.replace("{lang}", lang)
     return template.rstrip() + " " + lang
+
+
+# File config mau tu sinh khi chua co (uu tien dung CONFIG_KEYS lam nguon).
+# api_key de COMMENT de file an toan khi load (van bao "no key" dung cach).
+CONFIG_TEMPLATE = """\
+# gcm config - sua file nay roi luu. Xem dang dung:  gcm config
+# Dang 'key = value'. Dong bat dau bang # la comment (bi bo qua).
+
+# --- API key (BAT BUOC) ---
+# Groq API key (free): https://console.groq.com/keys
+# Bo dau '#' o dong duoi roi dan key cua ban vao:
+# api_key = gsk_...
+
+# --- Ngon ngu mac dinh: vi | en ---
+# lang = vi
+
+# --- Model (mac dinh: llama-3.3-70b-versatile) ---
+# model = llama-3.3-70b-versatile
+
+# --- Chon file kieu TUI: true | false ---
+# tui = true
+
+# --- Tu push sau commit: ask | always | never ---
+# push = ask
+
+# --- Coauthor credit khi push tu gcm (off de tat) ---
+coauthor = devduide <devduide@users.noreply.github.com>
+# coauthor = off
+
+# --- System prompt: override ngan; hoac dat file system_prompt.md ---
+# system_prompt = Viet commit theo Conventional Commits, ngan gon. {lang}
+"""
+
+
+def ensure_user_config():
+    """Tao thu muc config + file mau khi chua co (chay luc khoi dong).
+
+    Dam bao moi cach cai (MSI/pip/bash) deu sinh ra file de nguoi dung sua.
+    Khong bao gio ghi de file da ton tai. Tra True neu vua tao file config.
+    """
+    created = False
+    cfg_dir = os.path.dirname(CONFIG_PATH)
+    try:
+        os.makedirs(cfg_dir, exist_ok=True)
+        if not os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                f.write(CONFIG_TEMPLATE)
+            created = True
+        sp_example = os.path.join(cfg_dir, "system_prompt.example.md")
+        if not os.path.exists(sp_example):
+            header = (
+                "<!-- gcm system prompt mau.\n"
+                "Copy sang system_prompt.md (cung thu muc) de dung lam prompt:\n"
+                "  Windows: copy system_prompt.example.md system_prompt.md\n"
+                "  Linux/macOS: cp system_prompt.example.md system_prompt.md\n"
+                "Khi system_prompt.md ton tai, gcm dung no thay prompt mac dinh.\n"
+                "{lang} = cau chi dinh ngon ngu (theo --vi/--en). -->\n"
+            )
+            with open(sp_example, "w", encoding="utf-8") as f:
+                f.write(header + DEFAULT_SYSTEM_PROMPT + "\n")
+    except OSError:
+        pass
+    return created
 
 
 def load_config():
@@ -403,9 +466,16 @@ def get_api_key():
         "  Lay key free tai: " + c("https://console.groq.com/keys", "36"),
         file=sys.stderr,
     )
-    print("  Roi chay mot trong hai cach:", file=sys.stderr)
-    print('    export GROQ_API_KEY="gsk_..."   (them vao ~/.bashrc)', file=sys.stderr)
-    print(f'    echo "gsk_..." > {CONFIG_PATH}', file=sys.stderr)
+    if os.path.exists(CONFIG_PATH):
+        print(f"  Mo file config va dien api_key: {c(CONFIG_PATH, '36')}",
+              file=sys.stderr)
+        print("  (bo dau '#' o dong 'api_key = gsk_...' roi dan key vao)",
+              file=sys.stderr)
+    else:
+        print("  Roi chay mot trong hai cach:", file=sys.stderr)
+        print('    export GROQ_API_KEY="gsk_..."   (them vao ~/.bashrc)',
+              file=sys.stderr)
+        print(f'    echo "gsk_..." > {CONFIG_PATH}', file=sys.stderr)
     sys.exit(1)
 
 
@@ -981,6 +1051,11 @@ def main():
         except (AttributeError, ValueError):
             pass
     enable_windows_ansi()
+
+    # Tu tao thu muc + file config mau khi chua co (moi cach cai deu co file).
+    global CONFIG
+    if ensure_user_config():
+        CONFIG = load_config()
 
     argv = sys.argv[1:]
     if argv == ["--gui"] or (not argv and is_double_clicked()):

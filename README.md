@@ -180,6 +180,12 @@ system_prompt = ...    # short override of how the AI writes ({lang} = language)
 
 CLI flags override config. Old single-line key files still work.
 
+> **Auto-created on first run:** the first time you run `gcm` (any install method,
+> including the Windows MSI), it creates `~/.config/gcm/config` (pre-filled with
+> commented hints) and `system_prompt.example.md` if missing. Just open `config`,
+> uncomment the `api_key` line and paste your key. gcm **never** overwrites a file
+> you've edited.
+
 **Example files** are provided to copy from: `config.example` and
 `system_prompt.example.md` (install.sh copies them into `~/.config/gcm/`):
 

@@ -149,3 +149,36 @@ def test_system_prompt_empty_file_falls_back_to_default(core, tmp_path, monkeypa
     monkeypatch.setattr(core, "CONFIG", {})
     out = core.get_system_prompt(False)
     assert "Conventional Commits" in out  # fell back to DEFAULT_SYSTEM_PROMPT
+
+
+def test_ensure_user_config_creates_files(core, tmp_path, monkeypatch):
+    cfg = tmp_path / "cfgdir" / "config"
+    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
+
+    created = core.ensure_user_config()
+    assert created is True
+    assert cfg.exists()
+    # api_key phai dang comment -> file an toan khi load (van bao "no key")
+    assert "# api_key = gsk_" in cfg.read_text(encoding="utf-8")
+    assert (cfg.parent / "system_prompt.example.md").exists()
+
+
+def test_ensure_user_config_does_not_overwrite(core, tmp_path, monkeypatch):
+    cfg = tmp_path / "cfgdir" / "config"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text("api_key = gsk_mine\n", encoding="utf-8")
+    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
+
+    created = core.ensure_user_config()
+    assert created is False
+    assert cfg.read_text(encoding="utf-8") == "api_key = gsk_mine\n"
+
+
+def test_created_config_loads_without_fake_key(core, tmp_path, monkeypatch):
+    cfg = tmp_path / "cfgdir" / "config"
+    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
+    core.ensure_user_config()
+    # load_config doc file vua tao: khong duoc co api_key (vi dang comment)
+    loaded = core.load_config()
+    assert "api_key" not in loaded
+    assert loaded.get("coauthor")  # coauthor mac dinh van duoc bat

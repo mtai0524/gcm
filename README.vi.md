@@ -180,6 +180,11 @@ system_prompt = ...    # override ngắn cách AI viết message ({lang} = ngôn
 
 Cờ CLI luôn đè config. File cũ chỉ chứa 1 dòng key vẫn chạy bình thường.
 
+> **Tự tạo lần đầu:** lần đầu chạy `gcm` (mọi cách cài — kể cả bản MSI Windows),
+> gcm tự tạo `~/.config/gcm/config` (đã có sẵn comment hướng dẫn) và
+> `system_prompt.example.md` nếu chưa có. Chỉ cần mở `config`, bỏ `#` ở dòng
+> `api_key` và dán key vào. gcm **không bao giờ** đè file bạn đã chỉnh.
+
 Có sẵn **file mẫu** để copy nhanh: `config.example` và `system_prompt.example.md`
 (install.sh tự copy vào `~/.config/gcm/`):
 
