@@ -171,7 +171,7 @@ vẫn được commit nhưng không gửi nội dung cho LLM; file quá to đư�
 ```ini
 api_key = gsk_...      # key free: https://console.groq.com/keys
 lang = vi              # ngôn ngữ message mặc định
-model = llama-3.3-70b-versatile
+model = openai/gpt-oss-120b
 tui = true             # mặc định chọn file kiểu TUI
 push = ask             # ask | always | never
 coauthor = devduide <devduide@users.noreply.github.com>  # off để tắt
@@ -232,7 +232,7 @@ terminal không hỗ trợ (vd pipe). Đặt `tui = true` trong config để th�
 <details>
 <summary>Ghi chú kỹ thuật</summary>
 
-- Endpoint Groq `/openai/v1/chat/completions`, model `llama-3.3-70b-versatile`.
+- Endpoint Groq `/openai/v1/chat/completions`, model `openai/gpt-oss-120b`.
 - Header `User-Agent` bắt buộc (thiếu là Cloudflare chặn 403).
 - Ép UTF-8 khi đọc git output & in console (tránh lỗi cp1252 trên Windows).
 - Diff > 12000 ký tự bị cắt trước khi gửi.

@@ -14,8 +14,8 @@
 # --- Ngon ngu message mac dinh: vi | en ---
 lang = vi
 
-# --- Model (mac dinh: llama-3.3-70b-versatile) ---
-# model = llama-3.3-70b-versatile
+# --- Model (mac dinh: openai/gpt-oss-120b) ---
+# model = openai/gpt-oss-120b
 
 # --- Chon file kieu TUI (mui ten + space): true | false ---
 # tui = true

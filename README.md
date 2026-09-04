@@ -171,7 +171,7 @@ Set defaults once, skip the flags (`key = value`, all optional):
 ```ini
 api_key = gsk_...      # free: https://console.groq.com/keys
 lang = vi              # default message language
-model = llama-3.3-70b-versatile
+model = openai/gpt-oss-120b
 tui = true             # default to TUI file picker
 push = ask             # ask | always | never
 coauthor = devduide <devduide@users.noreply.github.com>  # off to disable
@@ -234,7 +234,7 @@ input). Set `tui = true` in the config to make it the default.
 <details>
 <summary>Technical notes</summary>
 
-- Groq endpoint `/openai/v1/chat/completions`, model `llama-3.3-70b-versatile`.
+- Groq endpoint `/openai/v1/chat/completions`, model `openai/gpt-oss-120b`.
 - `User-Agent` header is required (without it Cloudflare returns 403).
 - Forces UTF-8 on git output & console (avoids cp1252 errors on Windows).
 - Diffs over 12000 chars are truncated before sending.

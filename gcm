@@ -21,18 +21,20 @@ Commit & push:
   gcm -p             Chi in message, khong commit
 
 Khac:
+  gcm --gui          Mo giao dien chon repo + sinh message
   gcm config         Xem config hien tai
   gcm -u             Tu cap nhat gcm len ban moi nhat (git pull)
   gcm -h             Tro giup
 
 Khi review: [Enter] commit . [p] commit+push . [e] sua . [r] tao lai . [n] huy
 Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
+Chay ngoai git repo: gcm tu mo giao dien de chon repo (khong co GUI thi bao loi).
 Lockfile/binary van duoc commit nhung khong gui noi dung cho LLM.
 
 Config (~/.config/gcm/config, dang key = value):
   api_key = gsk_...      key free tai https://console.groq.com/keys
   lang = vi | en         ngon ngu mac dinh cua message
-  model = <ten model>    mac dinh: llama-3.3-70b-versatile
+  model = <ten model>    mac dinh: openai/gpt-oss-120b
   tui = true | false     mac dinh chon file kieu TUI
   push = ask | always | never
   coauthor = Ten <email> them 'Co-authored-by' khi push tu gcm (off de tat)
@@ -49,7 +51,7 @@ import sys
 import urllib.error
 import urllib.request
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -59,7 +61,7 @@ LOGO = r"""
 ╚═════╝ ╚══════╝  ╚═══╝  ╚═════╝  ╚═════╝ ╚═╝╚═════╝ ╚══════╝
 """
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_DIFF_CHARS = 12000
 CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
 SYSTEM_PROMPT_PATH = os.path.expanduser("~/.config/gcm/system_prompt.md")
@@ -183,8 +185,8 @@ CONFIG_TEMPLATE = """\
 # --- Ngon ngu mac dinh: vi | en ---
 # lang = vi
 
-# --- Model (mac dinh: llama-3.3-70b-versatile) ---
-# model = llama-3.3-70b-versatile
+# --- Model (mac dinh: openai/gpt-oss-120b) ---
+# model = openai/gpt-oss-120b
 
 # --- Chon file kieu TUI: true | false ---
 # tui = true
@@ -431,8 +433,37 @@ def is_double_clicked():
         return False
 
 
+def open_gui(hide_console=False):
+    """Mo giao dien Tkinter. Tra (ok, ly_do_that_bai).
+
+    hide_console: chi dung khi double-click tren Windows - go cua so console
+    den di. Khi chay tu terminal thi giu console lai de con in log.
+    Khong mo duoc (thieu tkinter, khong co man hinh...) -> (False, ly do)
+    de nguoi goi quay ve duong CLI.
+    """
+    if hide_console and os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.FreeConsole()
+        except Exception:
+            pass
+    try:
+        import gcm_gui
+    except ImportError as e:
+        return False, str(e)
+    try:
+        gcm_gui.run_gui(sys.modules[__name__])
+    except Exception as e:  # tkinter.TclError khi khong co man hinh (SSH/CI)
+        return False, str(e)
+    return True, ""
+
+
 def c(text, code):
-    if not sys.stdout.isatty():
+    try:
+        if not sys.stdout.isatty():
+            return text
+    except (AttributeError, ValueError, OSError):
+        # stdout = None (pythonw) hoac console da bi FreeConsole -> khong mau
         return text
     return f"\033[{code}m{text}\033[0m"
 
@@ -479,7 +510,8 @@ def get_api_key():
     sys.exit(1)
 
 
-def ensure_repo():
+def in_repo():
+    """True neu thu muc hien tai nam trong git work tree (set REPO_ROOT)."""
     global REPO_ROOT
     res = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree", "--show-toplevel"],
@@ -488,9 +520,9 @@ def ensure_repo():
     )
     lines = res.stdout.splitlines()
     if res.returncode != 0 or not lines or lines[0].strip() != "true":
-        err("khong phai git repository (chay trong thu muc repo).")
-        sys.exit(1)
+        return False
     REPO_ROOT = lines[1].strip() if len(lines) > 1 else None
+    return True
 
 
 def set_repo(folder):
@@ -876,9 +908,12 @@ def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
               file=sys.stderr)
         sys.exit(1)
     try:
-        msg = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError):
+        msg = (body["choices"][0]["message"].get("content") or "").strip()
+    except (KeyError, IndexError, AttributeError):
         err("phan hoi API khong hop le: " + json.dumps(body)[:300])
+        sys.exit(1)
+    if not msg:
+        err("model tra ve noi dung rong: " + json.dumps(body)[:300])
         sys.exit(1)
     if msg.startswith("```"):
         lines = msg.splitlines()
@@ -1058,17 +1093,14 @@ def main():
         CONFIG = load_config()
 
     argv = sys.argv[1:]
-    if argv == ["--gui"] or (not argv and is_double_clicked()):
+    double_click = not argv and is_double_clicked()
+    if argv == ["--gui"] or double_click:
         # An cua so console den khi double-click (chi Windows; an toan voi
         # subprocess git con vi chung tu tao console rieng neu can).
-        if os.name == "nt":
-            try:
-                import ctypes
-                ctypes.windll.kernel32.FreeConsole()
-            except Exception:
-                pass
-        import gcm_gui
-        gcm_gui.run_gui(sys.modules[__name__])
+        ok, why = open_gui(hide_console=double_click)
+        if not ok:
+            err(f"khong mo duoc giao dien: {why}")
+            sys.exit(1)
         return
     if "-h" in argv or "--help" in argv:
         print(c(LOGO, "36"))
@@ -1104,7 +1136,17 @@ def main():
     no_push = push_cfg == "never"
     model = model_override or MODEL
 
-    ensure_repo()
+    if not in_repo():
+        # Chay ngoai repo (vd double-click, chay tu task runner nhu Cowork):
+        # mo giao dien de chon repo thay vi thoat luon.
+        print(c("khong o trong git repo -> mo giao dien de chon repo...", "90"),
+              file=sys.stderr)
+        ok, why = open_gui()
+        if ok:
+            return
+        err("khong phai git repository (chay trong thu muc repo).")
+        err(f"khong mo duoc giao dien de chon repo: {why}")
+        sys.exit(1)
 
     def pick(default_all=False):
         """Chọn file: TUI nếu -t và hỗ trợ được, ngược lại chế độ nhập số."""
