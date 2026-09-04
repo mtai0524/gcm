@@ -31,7 +31,8 @@ Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
 Chay ngoai git repo: gcm tu mo giao dien de chon repo (khong co GUI thi bao loi).
 Lockfile/binary van duoc commit nhung khong gui noi dung cho LLM.
 
-Config (~/.config/gcm/config, dang key = value):
+Config (~/.config/gcm/config, dang key = value). Key nao khong khai bao thi
+lay mac dinh built-in trong chuong trinh - chi viet vao file khi muon doi:
   api_key = gsk_...      key free tai https://console.groq.com/keys
   lang = vi | en         ngon ngu mac dinh cua message
   model = <ten model>    mac dinh: openai/gpt-oss-120b
@@ -42,6 +43,7 @@ Config (~/.config/gcm/config, dang key = value):
 System prompt (uu tien): file ~/.config/gcm/system_prompt.md > config
   'system_prompt' > mac dinh. Placeholder {lang} = cau chi dinh ngon ngu.
 Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
+API key: env > file config > key nhung san luc build (neu ban build co).
 """
 import json
 import os
@@ -51,7 +53,7 @@ import sys
 import urllib.error
 import urllib.request
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -70,6 +72,11 @@ CONFIG_KEYS = (
     "system_prompt",
 )
 REPO_ROOT = None
+
+# API key nhung san luc build (build.ps1 doc env GCM_EMBED_KEY va thay dong
+# nay trong ban copy gcm_entry.py). De trong o source - KHONG BAO GIO commit
+# key that vao day. Uu tien thap nhat: env > config > key nhung san.
+EMBEDDED_API_KEY = ""
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
 # Co the doi/tat qua config: coauthor = Ten <email>  hoac  coauthor = off
@@ -171,8 +178,21 @@ def get_system_prompt(vietnamese):
     return template.rstrip() + " " + lang
 
 
+# Gia tri mac dinh cua cac key "dung chung" - nguon chan ly nam trong code,
+# KHONG ghi thanh dong song trong file config. Nho vay ban moi doi default
+# la moi may deu an theo, khong bi file config cu ghim lai gia tri co.
+# api_key / last_repo / system_prompt rieng tung may -> khong co mac dinh.
+CONFIG_DEFAULTS = {
+    "lang": "en",
+    "model": DEFAULT_MODEL,
+    "tui": "false",
+    "push": "ask",
+    "coauthor": DEFAULT_COAUTHOR,
+}
+
 # File config mau tu sinh khi chua co (uu tien dung CONFIG_KEYS lam nguon).
-# api_key de COMMENT de file an toan khi load (van bao "no key" dung cach).
+# Moi key deu de COMMENT: file an toan khi load (van bao "no key" dung cach)
+# va khong ghim cung mac dinh nao.
 CONFIG_TEMPLATE = """\
 # gcm config - sua file nay roi luu. Xem dang dung:  gcm config
 # Dang 'key = value'. Dong bat dau bang # la comment (bi bo qua).
@@ -195,7 +215,7 @@ CONFIG_TEMPLATE = """\
 # push = ask
 
 # --- Coauthor credit khi push tu gcm (off de tat) ---
-coauthor = devduide <devduide@users.noreply.github.com>
+# coauthor = devduide <devduide@users.noreply.github.com>
 # coauthor = off
 
 # --- System prompt: override ngan; hoac dat file system_prompt.md ---
@@ -232,6 +252,41 @@ def ensure_user_config():
     except OSError:
         pass
     return created
+
+
+def prune_default_config():
+    """Comment lai cac dong config co gia tri y het mac dinh (don khi nang cap).
+
+    Ban cu ghi thang 'coauthor = ...' vao file, nen doi mac dinh trong code
+    cung vo tac dung. Ham nay bien cac dong do thanh comment -> tu dong theo
+    built-in. Chi dung toi key co trong CONFIG_DEFAULTS; api_key/last_repo/
+    system_prompt khong bao gio bi dung toi. Tra list key da comment lai.
+    """
+    if not os.path.exists(CONFIG_PATH):
+        return []
+    try:
+        with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    pruned, out = [], []
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k, _, v = s.partition("=")
+            if CONFIG_DEFAULTS.get(k.strip().lower()) == v.strip():
+                out.append("# " + line.lstrip())
+                pruned.append(k.strip().lower())
+                continue
+        out.append(line)
+    if not pruned:
+        return []
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+    except OSError:
+        return []
+    return pruned
 
 
 def load_config():
@@ -308,6 +363,16 @@ def show_config():
         if k == "system_prompt" and len(v) > 60:
             v = v[:57] + "..."
         print(f"  {k} = {v}")
+    # Nguon api key dang dung (env > file config > nhung san luc build)
+    if os.environ.get("GROQ_API_KEY", "").strip():
+        key_src = "env GROQ_API_KEY"
+    elif CONFIG.get("api_key"):
+        key_src = "file config"
+    elif EMBEDDED_API_KEY:
+        key_src = "nhung san trong ban build"
+    else:
+        key_src = "CHUA CO (lay free tai https://console.groq.com/keys)"
+    print(c("api key: ", "1") + key_src)
     # Nguon system prompt dang dung
     if os.path.exists(SYSTEM_PROMPT_PATH):
         sp_src = f"file ({SYSTEM_PROMPT_PATH})"
@@ -488,8 +553,15 @@ def run_git(args, check=True):
     return res.stdout
 
 
+def resolve_api_key():
+    """Key theo thu tu: env > file config > key nhung san luc build. '' neu chua co."""
+    return (os.environ.get("GROQ_API_KEY", "").strip()
+            or CONFIG.get("api_key", "")
+            or EMBEDDED_API_KEY)
+
+
 def get_api_key():
-    key = os.environ.get("GROQ_API_KEY", "").strip() or CONFIG.get("api_key", "")
+    key = resolve_api_key()
     if key:
         return key
     err("no Groq API key found.")
@@ -1090,6 +1162,13 @@ def main():
     # Tu tao thu muc + file config mau khi chua co (moi cach cai deu co file).
     global CONFIG
     if ensure_user_config():
+        CONFIG = load_config()
+    # Don file config cu: dong nao trung y het mac dinh thi comment lai de
+    # tu day theo built-in (doi mac dinh o ban sau la an ngay).
+    pruned = prune_default_config()
+    if pruned:
+        print(c(f"(config: da comment {', '.join(pruned)} vi trung mac dinh "
+                f"-> tu day dung built-in)", "90"), file=sys.stderr)
         CONFIG = load_config()
 
     argv = sys.argv[1:]

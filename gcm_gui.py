@@ -16,9 +16,8 @@ def run_gui(core):
 
 
 def _api_key(core):
-    """Lay api_key tu env/config; '' neu chua co (khong sys.exit nhu get_api_key)."""
-    return (os.environ.get("GROQ_API_KEY", "").strip()
-            or core.CONFIG.get("api_key", ""))
+    """Lay api_key tu env/config/key nhung san; '' neu chua co (khong sys.exit)."""
+    return core.resolve_api_key()
 
 
 class GcmApp(tk.Tk):

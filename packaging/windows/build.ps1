@@ -41,6 +41,22 @@ Write-Host "==> Cai PyInstaller..."
 # 4. Build gcm.exe (copy sang .py cho PyInstaller on dinh)
 Write-Host "==> Build gcm.exe..."
 Copy-Item gcm gcm_entry.py -Force
+
+# 4b. (Tuy chon) Nhung san API key vao exe: dat $env:GCM_EMBED_KEY truoc khi
+#     build. Chi sua ban copy gcm_entry.py, KHONG dung vao file nguon 'gcm'.
+#     CANH BAO: key nam trong binary, ai co file exe cung doc duoc
+#     (strings gcm.exe). Chi dung cho ban build noi bo - dung upload Releases.
+if ($env:GCM_EMBED_KEY) {
+    $key = $env:GCM_EMBED_KEY.Trim()
+    $src = Get-Content gcm_entry.py -Raw
+    # \r? de khop ca khi file da bi doi sang line ending CRLF
+    $new = $src -replace '(?m)^EMBEDDED_API_KEY = ""(\r?)$', ("EMBEDDED_API_KEY = " + '"' + $key + '"' + '$1')
+    if ($new -eq $src) { throw "Khong tim thay dong 'EMBEDDED_API_KEY = `"`"' de thay key." }
+    Set-Content gcm_entry.py -Value $new -Encoding utf8 -NoNewline
+    Write-Host "    da nhung API key (...$($key.Substring([Math]::Max(0, $key.Length - 4)))) vao exe" -ForegroundColor Yellow
+} else {
+    Write-Host "    khong nhung API key (dat `$env:GCM_EMBED_KEY neu muon)"
+}
 # gcm_gui.py da nam o thu muc goc repo; --paths . de PyInstaller tim thay no.
 & $py -m PyInstaller --onefile --name gcm `
     --hidden-import gcm_gui `

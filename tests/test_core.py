@@ -1,3 +1,4 @@
+import os
 import subprocess
 
 
@@ -39,7 +40,10 @@ def test_set_repo_ok(core, git_repo):
     ok, msg = core.set_repo(str(git_repo))
     assert ok is True
     assert msg == ""
-    assert core.REPO_ROOT == str(git_repo)
+    # Tren Windows `git rev-parse --show-toplevel` tra dau '/' -> so sanh
+    # sau khi chuan hoa, khong so sanh chuoi tho.
+    assert os.path.normcase(os.path.normpath(core.REPO_ROOT)) == \
+        os.path.normcase(os.path.normpath(str(git_repo)))
 
 
 def test_set_repo_not_a_repo(core, tmp_path):
@@ -178,7 +182,46 @@ def test_created_config_loads_without_fake_key(core, tmp_path, monkeypatch):
     cfg = tmp_path / "cfgdir" / "config"
     monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
     core.ensure_user_config()
-    # load_config doc file vua tao: khong duoc co api_key (vi dang comment)
+    # File mau chi gom comment: khong key nao duoc bat san, moi mac dinh
+    # chung deu lay tu code (CONFIG_DEFAULTS) nen ban sau doi duoc.
+    assert core.load_config() == {}
+
+
+def test_default_coauthor_applies_without_config(core, tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "CONFIG", {})
+    assert core.DEFAULT_COAUTHOR in core.add_coauthor("feat: x")
+
+
+def test_prune_default_config_comments_redundant_lines(core, tmp_path,
+                                                       monkeypatch):
+    cfg = tmp_path / "config"
+    cfg.write_text(
+        "# comment\n"
+        "api_key = gsk_mine\n"
+        f"coauthor = {core.DEFAULT_COAUTHOR}\n"   # trung mac dinh -> comment
+        f"model = {core.DEFAULT_MODEL}\n"          # trung mac dinh -> comment
+        "lang = vi\n"                              # khac mac dinh -> giu
+        "last_repo = C:/x\n",                      # khong co mac dinh -> giu
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
+
+    assert sorted(core.prune_default_config()) == ["coauthor", "model"]
     loaded = core.load_config()
-    assert "api_key" not in loaded
-    assert loaded.get("coauthor")  # coauthor mac dinh van duoc bat
+    assert loaded == {"api_key": "gsk_mine", "lang": "vi",
+                      "last_repo": "C:/x"}
+    assert "# comment" in cfg.read_text(encoding="utf-8")
+    assert core.prune_default_config() == []  # idempotent
+
+
+def test_resolve_api_key_order(core, monkeypatch):
+    monkeypatch.setattr(core, "EMBEDDED_API_KEY", "gsk_embedded")
+    monkeypatch.setattr(core, "CONFIG", {})
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert core.resolve_api_key() == "gsk_embedded"      # nhung san
+
+    monkeypatch.setattr(core, "CONFIG", {"api_key": "gsk_cfg"})
+    assert core.resolve_api_key() == "gsk_cfg"           # config > nhung san
+
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_env")
+    assert core.resolve_api_key() == "gsk_env"           # env > tat ca
