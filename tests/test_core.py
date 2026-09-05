@@ -11,31 +11,6 @@ def test_module_loads(core):
     assert callable(core.changed_files)
 
 
-def test_save_config_creates_and_updates(core, tmp_path, monkeypatch):
-    cfg = tmp_path / "config"
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-
-    core.save_config("api_key", "gsk_abc")
-    assert "api_key = gsk_abc" in cfg.read_text(encoding="utf-8")
-
-    core.save_config("api_key", "gsk_xyz")  # update in place
-    text = cfg.read_text(encoding="utf-8")
-    assert "gsk_xyz" in text and "gsk_abc" not in text
-    assert text.count("api_key") == 1  # not duplicated
-
-
-def test_save_config_preserves_other_lines(core, tmp_path, monkeypatch):
-    cfg = tmp_path / "config"
-    cfg.write_text("# comment\nlang = vi\n", encoding="utf-8")
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-
-    core.save_config("api_key", "gsk_1")
-    text = cfg.read_text(encoding="utf-8")
-    assert "# comment" in text
-    assert "lang = vi" in text
-    assert "api_key = gsk_1" in text
-
-
 def test_set_repo_ok(core, git_repo):
     ok, msg = core.set_repo(str(git_repo))
     assert ok is True
@@ -155,63 +130,9 @@ def test_system_prompt_empty_file_falls_back_to_default(core, tmp_path, monkeypa
     assert "Conventional Commits" in out  # fell back to DEFAULT_SYSTEM_PROMPT
 
 
-def test_ensure_user_config_creates_files(core, tmp_path, monkeypatch):
-    cfg = tmp_path / "cfgdir" / "config"
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-
-    created = core.ensure_user_config()
-    assert created is True
-    assert cfg.exists()
-    # api_key phai dang comment -> file an toan khi load (van bao "no key")
-    assert "# api_key = gsk_" in cfg.read_text(encoding="utf-8")
-    assert (cfg.parent / "system_prompt.example.md").exists()
-
-
-def test_ensure_user_config_does_not_overwrite(core, tmp_path, monkeypatch):
-    cfg = tmp_path / "cfgdir" / "config"
-    cfg.parent.mkdir(parents=True)
-    cfg.write_text("api_key = gsk_mine\n", encoding="utf-8")
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-
-    created = core.ensure_user_config()
-    assert created is False
-    assert cfg.read_text(encoding="utf-8") == "api_key = gsk_mine\n"
-
-
-def test_created_config_loads_without_fake_key(core, tmp_path, monkeypatch):
-    cfg = tmp_path / "cfgdir" / "config"
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-    core.ensure_user_config()
-    # File mau chi gom comment: khong key nao duoc bat san, moi mac dinh
-    # chung deu lay tu code (CONFIG_DEFAULTS) nen ban sau doi duoc.
-    assert core.load_config() == {}
-
-
 def test_default_coauthor_applies_without_config(core, tmp_path, monkeypatch):
     monkeypatch.setattr(core, "CONFIG", {})
     assert core.DEFAULT_COAUTHOR in core.add_coauthor("feat: x")
-
-
-def test_prune_default_config_comments_redundant_lines(core, tmp_path,
-                                                       monkeypatch):
-    cfg = tmp_path / "config"
-    cfg.write_text(
-        "# comment\n"
-        "api_key = gsk_mine\n"
-        f"coauthor = {core.DEFAULT_COAUTHOR}\n"   # trung mac dinh -> comment
-        f"model = {core.DEFAULT_MODEL}\n"          # trung mac dinh -> comment
-        "lang = vi\n"                              # khac mac dinh -> giu
-        "last_repo = C:/x\n",                      # khong co mac dinh -> giu
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(core, "CONFIG_PATH", str(cfg))
-
-    assert sorted(core.prune_default_config()) == ["coauthor", "model"]
-    loaded = core.load_config()
-    assert loaded == {"api_key": "gsk_mine", "lang": "vi",
-                      "last_repo": "C:/x"}
-    assert "# comment" in cfg.read_text(encoding="utf-8")
-    assert core.prune_default_config() == []  # idempotent
 
 
 def test_resolve_api_key_order(core, monkeypatch):

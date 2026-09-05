@@ -34,7 +34,7 @@ class GcmApp(tk.Tk):
         self._build_actions()
 
         # Mo san repo gan nhat neu con ton tai
-        last = core.CONFIG.get("last_repo", "")
+        last = core.cfg("last_repo")
         if last and os.path.isdir(last):
             self._open_repo(last)
 
@@ -71,8 +71,7 @@ class GcmApp(tk.Tk):
         ttk.Entry(row, textvariable=self.hint_var, width=24).pack(
             side="left", padx=4)
 
-        default_lang = "vi" if self.core.CONFIG.get("lang", "").lower() == "vi" \
-            else "en"
+        default_lang = "vi" if self.core.cfg("lang") == "vi" else "en"
         self.lang_var = tk.StringVar(value=default_lang)
         ttk.Radiobutton(row, text="vi", variable=self.lang_var,
                         value="vi").pack(side="left")
@@ -152,7 +151,7 @@ class GcmApp(tk.Tk):
         self._set_status("Đang sinh message…")
         vietnamese = self.lang_var.get() == "vi"
         hint = self.hint_var.get().strip() or None
-        model = self.core.MODEL
+        model = self.core.cfg("model")
         all_paths = self._all_paths()  # capture tren main thread (tranh race)
 
         def work():
@@ -206,6 +205,5 @@ class GcmApp(tk.Tk):
             parent=self)
         if key:
             key = key.strip()
-            self.core.save_config("api_key", key)
-            self.core.CONFIG["api_key"] = key
+            self.core.save_config("api_key", key)  # nap lai CONFIG luon
         return key

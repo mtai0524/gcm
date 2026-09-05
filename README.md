@@ -45,9 +45,9 @@ Open a new terminal → `gcm -h`.
 # 1. clone
 git clone https://github.com/mtai0524/gcm.git $HOME\tools\gcm
 
-# 2. save API key
+# 2. save API key (or run `gcm config set api_key gsk_...` after step 4)
 New-Item -ItemType Directory -Force -Path $HOME\.config\gcm | Out-Null
-"gsk_..." | Out-File -Encoding ascii -NoNewline $HOME\.config\gcm\config
+'{ "api_key": "gsk_..." }' | Out-File -Encoding utf8 $HOME\.config\gcm\config.json
 
 # 3. add gcm to $PROFILE
 if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
@@ -68,8 +68,9 @@ gcm -h
 > (answer `Y`), then re-run `. $PROFILE`.
 </details>
 
-**API key** — resolved in order: env `GROQ_API_KEY` → file `~/.config/gcm/config`
-(Windows: `%USERPROFILE%\.config\gcm\config`, one line: `gsk_...`).
+**API key** — resolved in order: env `GROQ_API_KEY` → `~/.config/gcm/config.json`
+(Windows: `%USERPROFILE%\.config\gcm\config.json`). Easiest way to set it:
+`gcm config set api_key gsk_...`
 
 ### Install on Windows (MSI)
 
@@ -153,7 +154,9 @@ git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 | `gcm -a`         | `git add -A` first, then generate |
 | `gcm -p`         | print message only (no prompt) |
 | `gcm --model X`  | use model `X` (or env `GCM_MODEL`) for this run |
-| `gcm config`     | show current config |
+| `gcm config`     | show effective config + where each value comes from |
+| `gcm config set KEY VALUE` | write one key to `config.json` |
+| `gcm config unset KEY` | drop the override, back to the built-in default |
 | `gcm -u`         | update gcm to the latest version |
 | `gcm -h` / `-v`  | help / version |
 
@@ -164,45 +167,67 @@ The header shows your branch and unpushed commit count (`main ↑2`).
 files are still committed but their content is not sent to the LLM; oversized files
 are summarized with `--stat` instead of being cut off mid-diff.
 
-### Config file (`~/.config/gcm/config`)
+### Config file (`~/.config/gcm/config.json`)
 
-Set defaults once, skip the flags (`key = value`, all optional):
+**Defaults live in the code; your file only holds what you changed.** Any key you
+don't write keeps following the built-in default, so upgrades that change a default
+take effect on your machine too — nothing is pinned by an old config file.
 
-```ini
-api_key = gsk_...      # free: https://console.groq.com/keys
-lang = vi              # default message language
-model = openai/gpt-oss-120b
-tui = true             # default to TUI file picker
-push = ask             # ask | always | never
-coauthor = devduide <devduide@users.noreply.github.com>  # off to disable
-system_prompt = ...    # short override of how the AI writes ({lang} = language)
+```jsonc
+{
+  "//": "keys starting with // are comments (JSON has none)",
+  "api_key": "gsk_...",          // free: https://console.groq.com/keys
+  "lang": "vi",                  // vi | en - default message language
+  "model": "openai/gpt-oss-120b",
+  "tui": true,                   // default to the TUI file picker
+  "push": "ask",                 // ask | always | never
+  "coauthor": "devduide <devduide@users.noreply.github.com>",  // "off" to disable
+  "system_prompt": "..."         // short override ({lang} = language instruction)
+}
 ```
 
-CLI flags override config. Old single-line key files still work.
+Resolution order: **CLI flag > env (`GROQ_API_KEY`, `GCM_MODEL`) > `config.json` >
+built-in default**. `gcm config` prints every key with its value *and* its source:
 
-> **Auto-created on first run:** the first time you run `gcm` (any install method,
-> including the Windows MSI), it creates `~/.config/gcm/config` (pre-filled with
-> commented hints) and `system_prompt.example.md` if missing. Just open `config`,
-> uncomment the `api_key` line and paste your key. gcm **never** overwrites a file
-> you've edited.
+```
+config: ~/.config/gcm/config.json
+  api_key        'gsk_abc...1234'          <- file
+  lang           'vi'                      <- file
+  model          'openai/gpt-oss-120b'     <- mac dinh
+  push           'ask'                     <- mac dinh
+```
 
-**Example files** are provided to copy from: `config.example` and
-`system_prompt.example.md` (install.sh copies them into `~/.config/gcm/`):
+Edit it by hand, or let gcm do it (values equal to the default are removed from the
+file instead of being written):
 
 ```bash
-cp config.example ~/.config/gcm/config            # then edit api_key, coauthor...
-cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # then edit the prompt
+gcm config set lang vi
+gcm config set api_key gsk_...
+gcm config unset lang      # back to the built-in default
+gcm config path            # print the file path
 ```
+
+Invalid JSON or a bad value (e.g. `"push": "sometimes"`) is reported and ignored —
+gcm keeps running on the defaults instead of failing.
+
+> **Auto-created on first run:** the first time you run `gcm` (any install method,
+> including the Windows MSI), it creates `~/.config/gcm/config.json`, a fully
+> documented `config.example.json`, and `system_prompt.example.md` if missing.
+> gcm **never** overwrites a config file you've edited.
+>
+> **Upgrading from an older gcm?** An existing `key = value` file at
+> `~/.config/gcm/config` is converted to `config.json` automatically on the first
+> run and kept as `config.migrated` — nothing to do by hand.
 
 #### Coauthor (collaborate with devduide)
 
 When you **push from gcm**, it appends a `Co-authored-by:` trailer so the commit
 credits a collaborator (GitHub shows the coauthor avatar). Defaults to `devduide`.
-Change it to your own name/email, or set `coauthor = off` to disable entirely:
+Change it to your own name/email, or set it to `"off"` to disable entirely:
 
-```ini
-coauthor = Your Name <you@example.com>
-# coauthor = off
+```bash
+gcm config set coauthor "Your Name <you@example.com>"
+gcm config set coauthor off
 ```
 
 #### System prompt (how the AI writes messages)
@@ -210,12 +235,16 @@ coauthor = Your Name <you@example.com>
 gcm picks the system prompt in priority order:
 
 1. File `~/.config/gcm/system_prompt.md` — for long multi-line prompts (highest priority)
-2. `system_prompt = ...` line in config — short one-line override
+2. `"system_prompt"` in `config.json` — short override
 3. Built-in default prompt
 
 A `{lang}` placeholder in the prompt is replaced with the language instruction per
 `--vi`/`--en`; if the prompt has no `{lang}`, the language line is appended. Run
 `gcm config` to see which source is active.
+
+```bash
+cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # then edit the prompt
+```
 
 `gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick by number:
 ```
@@ -229,7 +258,7 @@ Chọn file để stage (3 thay đổi):
 `gcm -t` opens a TUI instead — move with `↑↓` (or `j`/`k`), toggle with `Space`,
 `d` to preview the diff of the highlighted file, `a` for all, `Enter` to confirm.
 Falls back to the numbered picker if the terminal doesn't support it (e.g. piped
-input). Set `tui = true` in the config to make it the default.
+input). Run `gcm config set tui true` to make it the default.
 
 <details>
 <summary>Technical notes</summary>

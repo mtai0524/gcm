@@ -1,0 +1,20 @@
+{
+  "//": "gcm config mau - copy sang config.json roi XOA key khong doi.",
+  "//note": "Key khong co trong file se lay mac dinh built-in.",
+  "//api_key": "Groq API key free tai https://console.groq.com/keys",
+  "api_key": "",
+  "//lang": "ngon ngu mac dinh cua commit message  (vi | en)",
+  "lang": "en",
+  "//model": "model Groq dung de sinh message",
+  "model": "openai/gpt-oss-120b",
+  "//tui": "true = mac dinh chon file kieu TUI (mui ten + space)",
+  "tui": false,
+  "//push": "hanh vi push sau khi commit  (ask | always | never)",
+  "push": "ask",
+  "//coauthor": "trailer 'Co-authored-by' khi push tu gcm ('off' de tat)",
+  "coauthor": "devduide <devduide@users.noreply.github.com>",
+  "//system_prompt": "override cach AI viet message (file system_prompt.md uu tien hon)",
+  "system_prompt": "",
+  "//last_repo": "repo mo gan nhat trong GUI (gcm tu ghi, khong can sua tay)",
+  "last_repo": ""
+}

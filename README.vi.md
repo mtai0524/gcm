@@ -47,7 +47,7 @@ git clone https://github.com/mtai0524/gcm.git $HOME\tools\gcm
 
 # 2. lưu API key
 New-Item -ItemType Directory -Force -Path $HOME\.config\gcm | Out-Null
-"gsk_..." | Out-File -Encoding ascii -NoNewline $HOME\.config\gcm\config
+'{ "api_key": "gsk_..." }' | Out-File -Encoding utf8 $HOME\.config\gcm\config.json
 
 # 3. thêm lệnh gcm vào $PROFILE
 if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
@@ -68,8 +68,9 @@ gcm -h
 > (gõ `Y`), rồi chạy lại `. $PROFILE`.
 </details>
 
-**API key** — đọc theo thứ tự: env `GROQ_API_KEY` → file `~/.config/gcm/config`
-(Windows: `%USERPROFILE%\.config\gcm\config`, 1 dòng key `gsk_...`).
+**API key** — đọc theo thứ tự: env `GROQ_API_KEY` → `~/.config/gcm/config.json`
+(Windows: `%USERPROFILE%\.config\gcm\config.json`). Cách nhanh nhất:
+`gcm config set api_key gsk_...`
 
 ### Cài trên Windows (MSI)
 
@@ -153,7 +154,9 @@ Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 | `gcm -a`         | `git add -A` rồi sinh |
 | `gcm -p`         | chỉ in message, không hỏi |
 | `gcm --model X`  | dùng model `X` (hoặc env `GCM_MODEL`) cho lần chạy này |
-| `gcm config`     | xem config hiện tại |
+| `gcm config`     | xem config đang dùng + mỗi key đến từ đâu |
+| `gcm config set KEY VALUE` | ghi 1 key vào `config.json` |
+| `gcm config unset KEY` | bỏ override, quay về mặc định built-in |
 | `gcm -u`         | cập nhật gcm lên bản mới nhất |
 | `gcm -h` / `-v`  | trợ giúp / version |
 
@@ -164,44 +167,66 @@ Khung review hiện branch + số commit chưa push (`main ↑2`).
 vẫn được commit nhưng không gửi nội dung cho LLM; file quá to được tóm tắt bằng
 `--stat` thay vì cắt cụt giữa chừng.
 
-### Config file (`~/.config/gcm/config`)
+### Config file (`~/.config/gcm/config.json`)
 
-Đặt mặc định một lần, khỏi gõ cờ (`key = value`, tất cả tùy chọn):
+**Mặc định nằm trong code, file của bạn chỉ chứa những gì bạn đổi.** Key nào không
+ghi trong file thì cứ theo mặc định built-in — nâng cấp gcm đổi mặc định là máy bạn
+ăn theo ngay, không bị file config cũ ghim lại giá trị cũ.
 
-```ini
-api_key = gsk_...      # key free: https://console.groq.com/keys
-lang = vi              # ngôn ngữ message mặc định
-model = openai/gpt-oss-120b
-tui = true             # mặc định chọn file kiểu TUI
-push = ask             # ask | always | never
-coauthor = devduide <devduide@users.noreply.github.com>  # off để tắt
-system_prompt = ...    # override ngắn cách AI viết message ({lang} = ngôn ngữ)
+```jsonc
+{
+  "//": "key bắt đầu bằng // là ghi chú (JSON không có comment)",
+  "api_key": "gsk_...",          // key free: https://console.groq.com/keys
+  "lang": "vi",                  // vi | en - ngôn ngữ message mặc định
+  "model": "openai/gpt-oss-120b",
+  "tui": true,                   // mặc định chọn file kiểu TUI
+  "push": "ask",                 // ask | always | never
+  "coauthor": "devduide <devduide@users.noreply.github.com>",  // "off" để tắt
+  "system_prompt": "..."         // override ngắn ({lang} = câu chỉ định ngôn ngữ)
+}
 ```
 
-Cờ CLI luôn đè config. File cũ chỉ chứa 1 dòng key vẫn chạy bình thường.
+Thứ tự ưu tiên: **cờ CLI > env (`GROQ_API_KEY`, `GCM_MODEL`) > `config.json` >
+mặc định built-in**. `gcm config` in ra từng key kèm **nguồn** đang lấy:
 
-> **Tự tạo lần đầu:** lần đầu chạy `gcm` (mọi cách cài — kể cả bản MSI Windows),
-> gcm tự tạo `~/.config/gcm/config` (đã có sẵn comment hướng dẫn) và
-> `system_prompt.example.md` nếu chưa có. Chỉ cần mở `config`, bỏ `#` ở dòng
-> `api_key` và dán key vào. gcm **không bao giờ** đè file bạn đã chỉnh.
+```
+config: ~/.config/gcm/config.json
+  api_key        'gsk_abc...1234'          <- file
+  lang           'vi'                      <- file
+  model          'openai/gpt-oss-120b'     <- mac dinh
+  push           'ask'                     <- mac dinh
+```
 
-Có sẵn **file mẫu** để copy nhanh: `config.example` và `system_prompt.example.md`
-(install.sh tự copy vào `~/.config/gcm/`):
+Sửa tay cũng được, hoặc để gcm ghi hộ (giá trị trùng mặc định sẽ bị **xoá** khỏi
+file thay vì ghim vào):
 
 ```bash
-cp config.example ~/.config/gcm/config            # rồi sửa api_key, coauthor...
-cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # rồi sửa prompt
+gcm config set lang vi
+gcm config set api_key gsk_...
+gcm config unset lang      # quay về mặc định built-in
+gcm config path            # in đường dẫn file config
 ```
+
+JSON hỏng hoặc giá trị sai (vd `"push": "sometimes"`) sẽ được báo rõ rồi bỏ qua —
+gcm vẫn chạy bằng mặc định chứ không chết.
+
+> **Tự tạo lần đầu:** lần đầu chạy `gcm` (mọi cách cài — kể cả bản MSI Windows),
+> gcm tự tạo `~/.config/gcm/config.json`, file mẫu đầy đủ `config.example.json` và
+> `system_prompt.example.md` nếu chưa có. gcm **không bao giờ** đè file bạn đã chỉnh.
+>
+> **Nâng cấp từ bản cũ?** File `key = value` cũ ở `~/.config/gcm/config` được tự
+> động chuyển sang `config.json` ở lần chạy đầu và giữ lại thành `config.migrated`
+> — bạn không phải làm gì thêm.
 
 #### Coauthor (collab cùng devduide)
 
 Khi **push từ gcm**, gcm thêm trailer `Co-authored-by:` để ghi credit (GitHub hiện
-avatar coauthor). Mặc định là `devduide`. Đổi tên/email của bạn, hoặc `coauthor = off`
+avatar coauthor). Mặc định là `devduide`. Đổi tên/email của bạn, hoặc đặt `"off"`
 để tắt hẳn:
 
-```ini
-coauthor = Tên Bạn <ban@example.com>
-# coauthor = off
+```bash
+gcm config set coauthor "Tên Bạn <ban@example.com>"
+gcm config set coauthor off
 ```
 
 #### System prompt (cách AI viết message)
@@ -209,12 +234,16 @@ coauthor = Tên Bạn <ban@example.com>
 gcm chọn system prompt theo thứ tự ưu tiên:
 
 1. File `~/.config/gcm/system_prompt.md` — cho prompt dài nhiều dòng (ưu tiên cao nhất)
-2. Dòng `system_prompt = ...` trong config — override ngắn 1 dòng
+2. Key `"system_prompt"` trong `config.json` — override ngắn
 3. Prompt mặc định built-in
 
 Placeholder `{lang}` trong prompt sẽ được thay bằng câu chỉ định ngôn ngữ theo
 `--vi`/`--en`; nếu prompt không có `{lang}`, câu ngôn ngữ tự được nối vào cuối.
 `gcm config` cho biết đang dùng nguồn nào.
+
+```bash
+cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # rồi sửa prompt
+```
 
 `gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn bằng số:
 ```
@@ -227,7 +256,7 @@ Chọn file để stage (3 thay đổi):
 
 `gcm -t` mở TUI thay vì nhập số — di chuyển `↑↓` (hoặc `j`/`k`), `Space` tick chọn,
 `d` xem diff file đang trỏ, `a` tất cả, `Enter` xong. Tự về chế độ nhập số nếu
-terminal không hỗ trợ (vd pipe). Đặt `tui = true` trong config để thành mặc định.
+terminal không hỗ trợ (vd pipe). Chạy `gcm config set tui true` để thành mặc định.
 
 <details>
 <summary>Ghi chú kỹ thuật</summary>

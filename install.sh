@@ -57,25 +57,28 @@ fi
 mkdir -p "$CONFIG_DIR"
 
 # Copy file mẫu để người dùng dễ cấu hình (không đè file đang dùng)
-for ex in config.example system_prompt.example.md; do
+for ex in config.example.json system_prompt.example.md; do
   if [ -f "$SCRIPT_DIR/$ex" ]; then
     cp -f "$SCRIPT_DIR/$ex" "$CONFIG_DIR/$ex"
   fi
 done
-echo "  [ok] file mẫu: $CONFIG_DIR/config.example, $CONFIG_DIR/system_prompt.example.md"
+echo "  [ok] file mẫu: $CONFIG_DIR/config.example.json, $CONFIG_DIR/system_prompt.example.md"
 
-if [ -n "$GROQ_API_KEY" ] || [ -s "$CONFIG_DIR/config" ]; then
-  echo "  [ok] API key đã có (env hoặc $CONFIG_DIR/config)"
+# gcm tự tạo/di trú config.json ở lần chạy đầu; ở đây chỉ hỏi API key nếu thiếu.
+CONFIG_FILE="$CONFIG_DIR/config.json"
+if [ -n "$GROQ_API_KEY" ] || grep -q '"api_key"[[:space:]]*:[[:space:]]*"gsk' "$CONFIG_FILE" 2>/dev/null \
+   || grep -q '^[[:space:]]*api_key' "$CONFIG_DIR/config" 2>/dev/null; then
+  echo "  [ok] API key đã có (env hoặc $CONFIG_FILE)"
 else
   echo
   echo "  Cần Groq API key (free). Lấy tại: https://console.groq.com/keys"
   read -rp "  Dán API key vào đây (Enter để bỏ qua, cấu hình sau): " key
   if [ -n "$key" ]; then
-    echo "$key" > "$CONFIG_DIR/config"
-    chmod 600 "$CONFIG_DIR/config"
-    echo "  [ok] đã lưu key vào $CONFIG_DIR/config"
+    "$BIN_DIR/gcm" config set api_key "$key" >/dev/null
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+    echo "  [ok] đã lưu key vào $CONFIG_FILE"
   else
-    echo "  [skip] chưa cấu hình key. Sau này: echo 'gsk_...' > $CONFIG_DIR/config"
+    echo "  [skip] chưa cấu hình key. Sau này: gcm config set api_key gsk_..."
   fi
 fi
 

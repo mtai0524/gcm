@@ -22,7 +22,8 @@ Commit & push:
 
 Khac:
   gcm --gui          Mo giao dien chon repo + sinh message
-  gcm config         Xem config hien tai
+  gcm config         Xem config hien tai (kem nguon: mac dinh/file/env)
+  gcm config set KEY VALUE / unset KEY / path
   gcm -u             Tu cap nhat gcm len ban moi nhat (git pull)
   gcm -h             Tro giup
 
@@ -31,19 +32,25 @@ Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
 Chay ngoai git repo: gcm tu mo giao dien de chon repo (khong co GUI thi bao loi).
 Lockfile/binary van duoc commit nhung khong gui noi dung cho LLM.
 
-Config (~/.config/gcm/config, dang key = value). Key nao khong khai bao thi
-lay mac dinh built-in trong chuong trinh - chi viet vao file khi muon doi:
-  api_key = gsk_...      key free tai https://console.groq.com/keys
-  lang = vi | en         ngon ngu mac dinh cua message
-  model = <ten model>    mac dinh: openai/gpt-oss-120b
-  tui = true | false     mac dinh chon file kieu TUI
-  push = ask | always | never
-  coauthor = Ten <email> them 'Co-authored-by' khi push tu gcm (off de tat)
-  system_prompt = ...    override cach AI viet message (ngan, 1 dong)
-System prompt (uu tien): file ~/.config/gcm/system_prompt.md > config
-  'system_prompt' > mac dinh. Placeholder {lang} = cau chi dinh ngon ngu.
-Env: GROQ_API_KEY, GCM_MODEL (uu tien hon config). Flag uu tien hon tat ca.
-API key: env > file config > key nhung san luc build (neu ban build co).
+Config: ~/.config/gcm/config.json (JSON). Mac dinh nam trong code, file cua
+ban CHI chua nhung key muon khac mac dinh - key nao vang mat thi theo built-in:
+  {
+    "api_key": "gsk_...",        key free tai https://console.groq.com/keys
+    "lang": "vi",                vi | en - ngon ngu mac dinh cua message
+    "model": "openai/gpt-oss-120b",
+    "tui": true,                 mac dinh chon file kieu TUI
+    "push": "ask",               ask | always | never
+    "coauthor": "Ten <email>",   'Co-authored-by' khi push ("off" de tat)
+    "system_prompt": "..."       override cach AI viet message
+  }
+Key bat dau bang "//" la ghi chu (JSON khong co comment). File mau day du:
+~/.config/gcm/config.example.json. File cu dang 'key = value' se duoc tu dong
+chuyen sang JSON o lan chay dau.
+Uu tien: flag CLI > env > config.json > mac dinh built-in. `gcm config` in ro
+tung key dang lay tu dau. Env: GROQ_API_KEY, GCM_MODEL.
+System prompt (uu tien): file ~/.config/gcm/system_prompt.md > key
+  "system_prompt" > mac dinh. Placeholder {lang} = cau chi dinh ngon ngu.
+API key: env > config.json > key nhung san luc build (neu ban build co).
 """
 import json
 import os
@@ -53,7 +60,7 @@ import sys
 import urllib.error
 import urllib.request
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -65,27 +72,25 @@ LOGO = r"""
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_DIFF_CHARS = 12000
-CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
+CONFIG_PATH = os.path.expanduser("~/.config/gcm/config.json")
+# File config kieu cu ('key = value'); chi dung de migrate sang JSON mot lan.
+LEGACY_CONFIG_PATH = os.path.expanduser("~/.config/gcm/config")
 SYSTEM_PROMPT_PATH = os.path.expanduser("~/.config/gcm/system_prompt.md")
-CONFIG_KEYS = (
-    "api_key", "lang", "model", "tui", "push", "coauthor", "last_repo",
-    "system_prompt",
-)
 REPO_ROOT = None
 
 # API key nhung san luc build (build.ps1 doc env GCM_EMBED_KEY va thay dong
 # nay trong ban copy gcm_entry.py). De trong o source - KHONG BAO GIO commit
-# key that vao day. Uu tien thap nhat: env > config > key nhung san.
+# key that vao day. Uu tien thap nhat: env > config.json > key nhung san.
 EMBEDDED_API_KEY = ""
 
 # Collaborator credit them vao commit khi push (GitHub hien avatar coauthor).
-# Co the doi/tat qua config: coauthor = Ten <email>  hoac  coauthor = off
+# Co the doi/tat qua config.json: "coauthor": "Ten <email>"  hoac  "off"
 DEFAULT_COAUTHOR = "devduide <devduide@users.noreply.github.com>"
 
 # System prompt mac dinh dieu khien cach AI viet commit message.
 # Nguoi dung co the ghi de, uu tien tu cao xuong thap:
-#   1) file ~/.config/gcm/system_prompt.md  (prompt dai nhieu dong)
-#   2) config 'system_prompt = ...'          (override ngan 1 dong)
+#   1) file ~/.config/gcm/system_prompt.md   (prompt dai nhieu dong)
+#   2) config.json key "system_prompt"        (override ngan)
 #   3) DEFAULT_SYSTEM_PROMPT ben duoi         (mac dinh)
 # Placeholder {lang} se duoc thay bang cau chi dinh ngon ngu (vi/en); neu
 # prompt tuy chinh khong co {lang}, cau ngon ngu se duoc noi vao cuoi.
@@ -153,7 +158,7 @@ DEFAULT_SYSTEM_PROMPT = (
 def get_system_prompt(vietnamese):
     """Tra ve system prompt da ap dung ngon ngu.
 
-    Uu tien: file system_prompt.md > config 'system_prompt' > mac dinh.
+    Uu tien: file system_prompt.md > key "system_prompt" > mac dinh.
     """
     lang = "Viet bang TIENG VIET." if vietnamese else "Write in ENGLISH."
 
@@ -169,7 +174,7 @@ def get_system_prompt(vietnamese):
         except OSError:
             template = None
     if template is None:
-        template = CONFIG.get("system_prompt", "").strip() or None
+        template = cfg("system_prompt").strip() or None
     if template is None:
         template = DEFAULT_SYSTEM_PROMPT
 
@@ -178,65 +183,366 @@ def get_system_prompt(vietnamese):
     return template.rstrip() + " " + lang
 
 
-# Gia tri mac dinh cua cac key "dung chung" - nguon chan ly nam trong code,
-# KHONG ghi thanh dong song trong file config. Nho vay ban moi doi default
-# la moi may deu an theo, khong bi file config cu ghim lai gia tri co.
-# api_key / last_repo / system_prompt rieng tung may -> khong co mac dinh.
-CONFIG_DEFAULTS = {
-    "lang": "en",
-    "model": DEFAULT_MODEL,
-    "tui": "false",
-    "push": "ask",
-    "coauthor": DEFAULT_COAUTHOR,
+# ---------------------------------------------------------------------------
+# Config: mac dinh nam trong code, file JSON chi chua phan nguoi dung doi
+# ---------------------------------------------------------------------------
+# CONFIG_SCHEMA la nguon chan ly duy nhat: moi key khai bao mac dinh + kieu +
+# mo ta ngay tai day. File ~/.config/gcm/config.json CHI chua nhung key nguoi
+# dung muon khac mac dinh. Nho vay:
+#   - Doi mac dinh trong code -> moi may an theo ngay, khong bi file cu ghim.
+#   - `gcm config` chi ro tung key den tu dau: mac dinh / file / env.
+# Uu tien khi doc:  mac dinh  <  file config.json  <  bien moi truong
+# (flag tren dong lenh van uu tien hon tat ca, xu ly trong main()).
+CONFIG_SCHEMA = {
+    "api_key": {
+        "default": "",
+        "type": str,
+        "help": "Groq API key free tai https://console.groq.com/keys",
+    },
+    "lang": {
+        "default": "en",
+        "type": str,
+        "choices": ("vi", "en"),
+        "help": "ngon ngu mac dinh cua commit message",
+    },
+    "model": {
+        "default": DEFAULT_MODEL,
+        "type": str,
+        "help": "model Groq dung de sinh message",
+    },
+    "tui": {
+        "default": False,
+        "type": bool,
+        "help": "true = mac dinh chon file kieu TUI (mui ten + space)",
+    },
+    "push": {
+        "default": "ask",
+        "type": str,
+        "choices": ("ask", "always", "never"),
+        "help": "hanh vi push sau khi commit",
+    },
+    "coauthor": {
+        "default": DEFAULT_COAUTHOR,
+        "type": str,
+        "help": "trailer 'Co-authored-by' khi push tu gcm ('off' de tat)",
+    },
+    "system_prompt": {
+        "default": "",
+        "type": str,
+        "help": "override cach AI viet message (file system_prompt.md uu tien hon)",
+    },
+    "last_repo": {
+        "default": "",
+        "type": str,
+        "help": "repo mo gan nhat trong GUI (gcm tu ghi, khong can sua tay)",
+    },
+}
+CONFIG_KEYS = tuple(CONFIG_SCHEMA)
+CONFIG_DEFAULTS = {k: s["default"] for k, s in CONFIG_SCHEMA.items()}
+# Env ghi de file config (chi vai key co y nghia khi dat tam thoi).
+CONFIG_ENV = {"api_key": "GROQ_API_KEY", "model": "GCM_MODEL"}
+# Key nhay cam: che bot khi in ra man hinh.
+SECRET_KEYS = ("api_key",)
+
+# Dong ghi chu dat dau config.json (JSON khong co comment -> dung key '//').
+CONFIG_HEADER = {
+    "//": "gcm config - CHI ghi nhung key ban muon khac mac dinh.",
+    "//help": "Xem tat ca key + mac dinh + nguon dang dung:  gcm config",
+    "//edit": "Sua nhanh:  gcm config set lang vi   |   gcm config unset lang",
 }
 
-# File config mau tu sinh khi chua co (uu tien dung CONFIG_KEYS lam nguon).
-# Moi key deu de COMMENT: file an toan khi load (van bao "no key" dung cach)
-# va khong ghim cung mac dinh nao.
-CONFIG_TEMPLATE = """\
-# gcm config - sua file nay roi luu. Xem dang dung:  gcm config
-# Dang 'key = value'. Dong bat dau bang # la comment (bi bo qua).
 
-# --- API key (BAT BUOC) ---
-# Groq API key (free): https://console.groq.com/keys
-# Bo dau '#' o dong duoi roi dan key cua ban vao:
-# api_key = gsk_...
+def cfg_bool(value):
+    """True/False tu gia tri config (chap nhan ca bool va chuoi kieu 'yes')."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
-# --- Ngon ngu mac dinh: vi | en ---
-# lang = vi
 
-# --- Model (mac dinh: openai/gpt-oss-120b) ---
-# model = openai/gpt-oss-120b
+def coerce_config_value(key, value):
+    """Ep value ve dung kieu khai bao trong schema.
 
-# --- Chon file kieu TUI: true | false ---
-# tui = true
+    Tra (ok, value_da_ep, loi). Value sai kieu / sai lua chon bi tu choi kem
+    thong bao de nguoi dung sua, thay vi am tham chay sai.
+    """
+    spec = CONFIG_SCHEMA[key]
+    if spec["type"] is bool:
+        if isinstance(value, bool):
+            return True, value, ""
+        s = str(value).strip().lower()
+        if s in ("1", "true", "yes", "on"):
+            return True, True, ""
+        if s in ("0", "false", "no", "off"):
+            return True, False, ""
+        return False, None, f"'{key}' can true/false, nhan '{value}'"
+    if isinstance(value, bool) or value is None:
+        return False, None, f"'{key}' can mot chuoi, nhan '{value}'"
+    s = str(value).strip()
+    choices = spec.get("choices")
+    if choices:
+        if s.lower() not in choices:
+            return False, None, (f"'{key}' chi nhan {' | '.join(choices)}, "
+                                 f"nhan '{s}'")
+        return True, s.lower(), ""
+    return True, s, ""
 
-# --- Tu push sau commit: ask | always | never ---
-# push = ask
 
-# --- Coauthor credit khi push tu gcm (off de tat) ---
-# coauthor = devduide <devduide@users.noreply.github.com>
-# coauthor = off
+def read_config_raw(path=None):
+    """Doc nguyen si config.json (giu ca key ghi chu). {} neu thieu/hong."""
+    path = path or CONFIG_PATH
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
 
-# --- System prompt: override ngan; hoac dat file system_prompt.md ---
-# system_prompt = Viet commit theo Conventional Commits, ngan gon. {lang}
-"""
+
+def read_config_file(path=None):
+    """Doc config.json -> (overrides cua nguoi dung, list canh bao).
+
+    Key bat dau bang '//' hoac '_' la ghi chu (JSON khong co comment) nen bo
+    qua. Key la / gia tri sai kieu -> canh bao chu khong lam gcm chet.
+    """
+    path = path or CONFIG_PATH
+    if not os.path.exists(path):
+        return {}, []
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            raw = json.load(f)
+    except OSError as e:
+        return {}, [f"khong doc duoc {path}: {e}"]
+    except ValueError as e:
+        return {}, [f"{path} khong phai JSON hop le ({e}) -> dung mac dinh"]
+    if not isinstance(raw, dict):
+        return {}, [f"{path} phai la mot object JSON dang {{...}}"]
+    out, warn = {}, []
+    for k, v in raw.items():
+        if k.startswith("//") or k.startswith("_"):
+            continue
+        key = k.strip().lower()
+        if key == "groq_api_key":  # ten cu
+            key = "api_key"
+        if key not in CONFIG_SCHEMA:
+            warn.append(f"config.json: bo qua key la '{k}'")
+            continue
+        if v is None or v == "":  # de trong = chua dat -> theo mac dinh
+            continue
+        ok, val, msg = coerce_config_value(key, v)
+        if not ok:
+            warn.append(f"config.json: {msg}")
+            continue
+        out[key] = val
+    return out, warn
+
+
+def env_config():
+    """Overrides lay tu bien moi truong (uu tien cao hon file config)."""
+    out = {}
+    for key, name in CONFIG_ENV.items():
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        ok, val, _ = coerce_config_value(key, raw)
+        if ok:
+            out[key] = val
+    return out
+
+
+def load_config():
+    """Tra config hieu luc = mac dinh <- file config.json <- env.
+
+    Dong thoi cap nhat USER_CONFIG (phan nguoi dung that su ghi trong file)
+    va CONFIG_WARNINGS, de `gcm config` noi duoc tung key den tu dau.
+    """
+    global USER_CONFIG, CONFIG_WARNINGS
+    USER_CONFIG, CONFIG_WARNINGS = read_config_file()
+    return {**CONFIG_DEFAULTS, **USER_CONFIG, **env_config()}
+
+
+def cfg(key):
+    """Gia tri hieu luc cua mot key config (luon co, khong bao gio KeyError)."""
+    return CONFIG.get(key, CONFIG_DEFAULTS[key])
+
+
+def config_source(key):
+    """Nguon dang cung cap gia tri: 'env GROQ_API_KEY' | 'file' | 'mac dinh'."""
+    env_name = CONFIG_ENV.get(key)
+    if env_name and os.environ.get(env_name, "").strip():
+        return f"env {env_name}"
+    if key in USER_CONFIG:
+        return "file"
+    return "mac dinh"
+
+
+def write_config_file(data, path=None):
+    """Ghi dict ra config.json (indent 2, key ghi chu '//' len dau)."""
+    path = path or CONFIG_PATH
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    ordered = {k: v for k, v in data.items() if k.startswith("//")}
+    for k in CONFIG_SCHEMA:  # key cua gcm theo dung thu tu schema
+        if k in data:
+            ordered[k] = data[k]
+    for k, v in data.items():  # key la cua nguoi dung: giu, khong xoa gium
+        ordered.setdefault(k, v)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(ordered, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def _key_aliases(key):
+    return {key, "groq_api_key"} if key == "api_key" else {key}
+
+
+def save_config(key, value):
+    """Ghi mot key vao config.json roi nap lai CONFIG trong bo nho.
+
+    Gia tri trung mac dinh built-in se bi XOA khoi file (file chi giu nhung
+    gi ban da doi). Cac key khac va dong ghi chu duoc giu nguyen.
+    Raise KeyError/ValueError neu key hoac value khong hop le.
+    """
+    global CONFIG
+    key = str(key).strip().lower()
+    if key not in CONFIG_SCHEMA:
+        raise KeyError(f"key config khong hop le: {key}")
+    ok, val, msg = coerce_config_value(key, value)
+    if not ok:
+        raise ValueError(msg)
+    raw = read_config_raw()
+    for k in [k for k in raw if k.strip().lower() in _key_aliases(key)]:
+        raw.pop(k)
+    if val != CONFIG_DEFAULTS[key]:
+        raw[key] = val
+    write_config_file(raw)
+    CONFIG = load_config()
+
+
+def unset_config(key):
+    """Xoa key khoi config.json -> quay ve mac dinh. True neu file co key do."""
+    global CONFIG
+    key = str(key).strip().lower()
+    if key not in CONFIG_SCHEMA:
+        raise KeyError(f"key config khong hop le: {key}")
+    raw = read_config_raw()
+    hit = [k for k in raw if k.strip().lower() in _key_aliases(key)]
+    for k in hit:
+        raw.pop(k)
+    if hit:
+        write_config_file(raw)
+        CONFIG = load_config()
+    return bool(hit)
+
+
+def prune_default_config():
+    """Xoa khoi config.json cac key co gia tri y het mac dinh built-in.
+
+    Giu dung tinh than "file chi chua nhung gi ban doi": doi mac dinh o ban
+    sau la an ngay, khong bi gia tri cu ghim lai. Tra list key da xoa.
+    """
+    raw = read_config_raw()
+    if not raw:
+        return []
+    pruned = []
+    for k in list(raw):
+        key = k.strip().lower()
+        if key not in CONFIG_SCHEMA:
+            continue
+        if raw[k] == "" or raw[k] is None:
+            continue  # o de trong san cho nguoi dung dien - giu nguyen
+        ok, val, _ = coerce_config_value(key, raw[k])
+        if ok and val == CONFIG_DEFAULTS[key]:
+            raw.pop(k)
+            pruned.append(key)
+    if pruned:
+        try:
+            write_config_file(raw)
+        except OSError:
+            return []
+    return pruned
+
+
+def parse_legacy_config(path):
+    """Doc file config kieu cu ('key = value', hoac ca file la mot api key)."""
+    out = {}
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            k, _, v = line.partition("=")
+            k, v = k.strip().lower(), v.strip()
+            if k == "groq_api_key":
+                k = "api_key"
+            if k in CONFIG_SCHEMA and v:
+                ok, val, _ = coerce_config_value(k, v)
+                if ok:
+                    out[k] = val
+        else:
+            out["api_key"] = line  # file cu: ca file la mot api key
+    return out
+
+
+def migrate_legacy_config():
+    """Chuyen file cu ~/.config/gcm/config (key = value) sang config.json.
+
+    Chi chay khi chua co config.json. Key trung mac dinh bi bo di. File cu
+    duoc doi ten thanh 'config.migrated' de lan sau khong doc lai.
+    Tra list key da chuyen.
+    """
+    if os.path.exists(CONFIG_PATH) or not os.path.exists(LEGACY_CONFIG_PATH):
+        return []
+    kept = {k: v for k, v in parse_legacy_config(LEGACY_CONFIG_PATH).items()
+            if v != CONFIG_DEFAULTS[k]}
+    try:
+        data = dict(CONFIG_HEADER)
+        data.update(kept)
+        write_config_file(data)
+        os.replace(LEGACY_CONFIG_PATH, LEGACY_CONFIG_PATH + ".migrated")
+    except OSError:
+        return []
+    return sorted(kept)
+
+
+def config_example_data():
+    """Noi dung config.example.json - sinh tu schema nen khong bao gio lech."""
+    data = {
+        "//": "gcm config mau - copy sang config.json roi XOA key khong doi.",
+        "//note": "Key khong co trong file se lay mac dinh built-in.",
+    }
+    for k, s in CONFIG_SCHEMA.items():
+        choices = s.get("choices")
+        data[f"//{k}"] = s["help"] + (f"  ({' | '.join(choices)})"
+                                      if choices else "")
+        data[k] = s["default"]
+    return data
 
 
 def ensure_user_config():
-    """Tao thu muc config + file mau khi chua co (chay luc khoi dong).
+    """Tao thu muc config + config.json + cac file mau khi chua co.
 
-    Dam bao moi cach cai (MSI/pip/bash) deu sinh ra file de nguoi dung sua.
-    Khong bao gio ghi de file da ton tai. Tra True neu vua tao file config.
+    Dam bao moi cach cai (MSI/pip/bash) deu co san file de nguoi dung sua.
+    Khong ghi de config.json da ton tai. Tra True neu vua tao config.json.
     """
     created = False
     cfg_dir = os.path.dirname(CONFIG_PATH)
     try:
         os.makedirs(cfg_dir, exist_ok=True)
         if not os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                f.write(CONFIG_TEMPLATE)
+            data = dict(CONFIG_HEADER)
+            data["api_key"] = ""  # cho san cho de dan key vao
+            write_config_file(data)
             created = True
+        example = os.path.join(cfg_dir, "config.example.json")
+        with open(example, "w", encoding="utf-8") as f:  # luon lam moi theo schema
+            json.dump(config_example_data(), f, indent=2, ensure_ascii=False)
+            f.write("\n")
         sp_example = os.path.join(cfg_dir, "system_prompt.example.md")
         if not os.path.exists(sp_example):
             header = (
@@ -254,143 +560,89 @@ def ensure_user_config():
     return created
 
 
-def prune_default_config():
-    """Comment lai cac dong config co gia tri y het mac dinh (don khi nang cap).
-
-    Ban cu ghi thang 'coauthor = ...' vao file, nen doi mac dinh trong code
-    cung vo tac dung. Ham nay bien cac dong do thanh comment -> tu dong theo
-    built-in. Chi dung toi key co trong CONFIG_DEFAULTS; api_key/last_repo/
-    system_prompt khong bao gio bi dung toi. Tra list key da comment lai.
-    """
-    if not os.path.exists(CONFIG_PATH):
-        return []
-    try:
-        with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
-    except OSError:
-        return []
-    pruned, out = [], []
-    for line in lines:
-        s = line.strip()
-        if s and not s.startswith("#") and "=" in s:
-            k, _, v = s.partition("=")
-            if CONFIG_DEFAULTS.get(k.strip().lower()) == v.strip():
-                out.append("# " + line.lstrip())
-                pruned.append(k.strip().lower())
-                continue
-        out.append(line)
-    if not pruned:
-        return []
-    try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            f.write("\n".join(out) + "\n")
-    except OSError:
-        return []
-    return pruned
-
-
-def load_config():
-    """Doc ~/.config/gcm/config dang 'key = value'.
-
-    Back-compat: dong khong co '=' (file cu chi chua key gsk_...) -> api_key.
-    Keys: api_key, lang (vi|en), model, tui (true|false), push (ask|always|never).
-    """
-    cfg = {}
-    if not os.path.exists(CONFIG_PATH):
-        return cfg
-    with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                k, _, v = line.partition("=")
-                k, v = k.strip().lower(), v.strip()
-                if k == "groq_api_key":  # ho tro format cu GROQ_API_KEY=...
-                    k = "api_key"
-                if k in CONFIG_KEYS and v:
-                    cfg[k] = v
-            else:
-                cfg["api_key"] = line  # file cu: 1 dong la key
-    return cfg
-
-
-def save_config(key, value):
-    """Ghi 'key = value' vao CONFIG_PATH; cap nhat tai cho neu da co.
-
-    Giu nguyen comment va cac key khac. Tao thu muc/file neu chua co.
-    """
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    lines = []
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
-    out, replaced = [], False
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            k = stripped.partition("=")[0].strip().lower()
-            if k == key.lower():
-                out.append(f"{key} = {value}")
-                replaced = True
-                continue
-        out.append(line)
-    if not replaced:
-        out.append(f"{key} = {value}")
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(out) + "\n")
-
-
-def cfg_bool(value):
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
-
-
+USER_CONFIG = {}
+CONFIG_WARNINGS = []
 CONFIG = load_config()
-MODEL = os.environ.get("GCM_MODEL") or CONFIG.get("model") or DEFAULT_MODEL
+MODEL = cfg("model")
 
 
-def show_config():
-    """In config hien tai (che api_key) roi thoat."""
-    print(c("config: ", "1") + CONFIG_PATH)
-    if not os.path.exists(CONFIG_PATH):
-        print("  (chua co file config)")
+def show_config(args=()):
+    """`gcm config` - xem/sua config, luon chi ro tung key den tu dau.
+
+    gcm config              bang config hieu luc + nguon (mac dinh/file/env)
+    gcm config set KEY VAL  ghi vao config.json (trung mac dinh -> xoa khoi file)
+    gcm config unset KEY    bo override, quay ve mac dinh built-in
+    gcm config path         in duong dan file config
+    """
+    args = list(args)
+    if args and args[0] == "path":
+        print(CONFIG_PATH)
+        sys.exit(0)
+    if args and args[0] in ("set", "unset"):
+        action, rest = args[0], args[1:]
+        if not rest or (action == "set" and len(rest) < 2):
+            err("dung: gcm config " + action + " KEY"
+                + (" VALUE" if action == "set" else ""))
+            print(c("key hop le: " + ", ".join(CONFIG_KEYS), "90"),
+                  file=sys.stderr)
+            sys.exit(1)
+        key = rest[0].strip().lower()
+        try:
+            if action == "set":
+                save_config(key, " ".join(rest[1:]))
+                shown = "***" if key in SECRET_KEYS else repr(cfg(key))
+                if config_source(key) == "mac dinh":
+                    # Trung mac dinh built-in -> khong ghim vao file lam gi.
+                    print(c(f"{key} = {shown}", "32")
+                          + c(" = mac dinh built-in -> khong ghi vao file",
+                              "90"))
+                else:
+                    print(c(f"da ghi: {key} = {shown}", "32")
+                          + c(f"  <- {config_source(key)}", "90"))
+            else:
+                removed = unset_config(key)
+                state = "da bo override" if removed else "khong co trong file"
+                print(c(f"{key}: {state}", "32")
+                      + c(f" -> mac dinh {CONFIG_DEFAULTS[key]!r}", "90"))
+        except (KeyError, ValueError) as e:
+            err(e.args[0] if e.args else str(e))
+            print(c("key hop le: " + ", ".join(CONFIG_KEYS), "90"),
+                  file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
+    if args:
+        err(f"khong hieu 'gcm config {args[0]}' (dung: set | unset | path)")
+        sys.exit(1)
+
+    print(c("config: ", "1") + CONFIG_PATH
+          + ("" if os.path.exists(CONFIG_PATH) else c("  (chua co file)", "90")))
+    width = max(len(k) for k in CONFIG_KEYS)
     for k in CONFIG_KEYS:
-        v = CONFIG.get(k)
-        if v is None:
-            continue
-        if k == "api_key" and len(v) > 8:
+        v = cfg(k)
+        if k in SECRET_KEYS and isinstance(v, str) and len(v) > 8:
             v = v[:7] + "..." + v[-4:]
-        if k == "system_prompt" and len(v) > 60:
+        if isinstance(v, str) and len(v) > 60:
             v = v[:57] + "..."
-        print(f"  {k} = {v}")
-    # Nguon api key dang dung (env > file config > nhung san luc build)
-    if os.environ.get("GROQ_API_KEY", "").strip():
-        key_src = "env GROQ_API_KEY"
-    elif CONFIG.get("api_key"):
-        key_src = "file config"
-    elif EMBEDDED_API_KEY:
-        key_src = "nhung san trong ban build"
-    else:
-        key_src = "CHUA CO (lay free tai https://console.groq.com/keys)"
-    print(c("api key: ", "1") + key_src)
-    # Nguon system prompt dang dung
+        src = config_source(k)
+        print(f"  {k.ljust(width)}  " + c(repr(v), "90" if src == "mac dinh"
+                                          else "0")
+              + c(f"  <- {src}", "90"))
+    if not resolve_api_key():
+        err("chua co api key - lay free tai https://console.groq.com/keys")
+    elif config_source("api_key") == "mac dinh" and EMBEDDED_API_KEY:
+        print(c("  (api_key dang lay tu key nhung san trong ban build)", "90"))
     if os.path.exists(SYSTEM_PROMPT_PATH):
         sp_src = f"file ({SYSTEM_PROMPT_PATH})"
-    elif CONFIG.get("system_prompt", "").strip():
+    elif cfg("system_prompt").strip():
         sp_src = "config 'system_prompt'"
     else:
         sp_src = "mac dinh (built-in)"
     print(c("system prompt: ", "1") + sp_src)
-    print(c("vi du day du:", "90"))
-    print(c("  api_key = gsk_...", "90"))
-    print(c("  lang = vi          # mac dinh --vi", "90"))
-    print(c(f"  model = {DEFAULT_MODEL}", "90"))
-    print(c("  tui = true         # mac dinh chon file kieu TUI", "90"))
-    print(c("  push = ask         # ask | always | never", "90"))
-    print(c(f"  coauthor = {DEFAULT_COAUTHOR}  # them khi push (off de tat)",
-            "90"))
-    print(c("  system_prompt = ...  # override ngan; hoac dat file "
-            f"{SYSTEM_PROMPT_PATH}", "90"))
+    print(c("sua: gcm config set KEY VALUE  |  gcm config unset KEY  |  hoac "
+            "mo thang config.json", "90"))
+    print(c("file mau day du: "
+            + os.path.join(os.path.dirname(CONFIG_PATH),
+                           "config.example.json"), "90"))
     sys.exit(0)
 
 
@@ -554,9 +806,13 @@ def run_git(args, check=True):
 
 
 def resolve_api_key():
-    """Key theo thu tu: env > file config > key nhung san luc build. '' neu chua co."""
+    """Key theo thu tu: env > config.json > key nhung san luc build.
+
+    Doc env trong ham (khong chi dua vao CONFIG) de env luon thang ke ca khi
+    CONFIG duoc nap tu truoc. Tra '' neu chua co key nao.
+    """
     return (os.environ.get("GROQ_API_KEY", "").strip()
-            or CONFIG.get("api_key", "")
+            or cfg("api_key")
             or EMBEDDED_API_KEY)
 
 
@@ -569,16 +825,11 @@ def get_api_key():
         "  Lay key free tai: " + c("https://console.groq.com/keys", "36"),
         file=sys.stderr,
     )
-    if os.path.exists(CONFIG_PATH):
-        print(f"  Mo file config va dien api_key: {c(CONFIG_PATH, '36')}",
-              file=sys.stderr)
-        print("  (bo dau '#' o dong 'api_key = gsk_...' roi dan key vao)",
-              file=sys.stderr)
-    else:
-        print("  Roi chay mot trong hai cach:", file=sys.stderr)
-        print('    export GROQ_API_KEY="gsk_..."   (them vao ~/.bashrc)',
-              file=sys.stderr)
-        print(f'    echo "gsk_..." > {CONFIG_PATH}', file=sys.stderr)
+    print("  Roi luu key bang mot trong hai cach:", file=sys.stderr)
+    print("    " + c("gcm config set api_key gsk_...", "36")
+          + f"   (ghi vao {CONFIG_PATH})", file=sys.stderr)
+    print('    export GROQ_API_KEY="gsk_..."   (them vao ~/.bashrc)',
+          file=sys.stderr)
     sys.exit(1)
 
 
@@ -936,9 +1187,9 @@ def build_prompt(diff, files, vietnamese, hint=None, skipped=None):
     return system, user
 
 
-def call_groq(api_key, system, user, model=MODEL, temperature=0.3):
+def call_groq(api_key, system, user, model=None, temperature=0.3):
     payload = {
-        "model": model,
+        "model": model or cfg("model"),
         "temperature": temperature,
         "messages": [
             {"role": "system", "content": system},
@@ -1009,10 +1260,10 @@ def generate_message(files, vietnamese, hint, api_key, model):
 def add_coauthor(message):
     """Them trailer 'Co-authored-by: ...' vao cuoi message neu chua co.
 
-    Lay tu config 'coauthor' (vd: 'Ten <email>'), mac dinh DEFAULT_COAUTHOR.
+    Lay tu config "coauthor" (vd: 'Ten <email>'), mac dinh DEFAULT_COAUTHOR.
     coauthor = off|none|false -> khong them. Tra message da co trailer.
     """
-    raw = CONFIG.get("coauthor", DEFAULT_COAUTHOR).strip()
+    raw = cfg("coauthor").strip()
     if raw.lower() in ("off", "none", "false", "no", ""):
         return message
     trailer = f"Co-authored-by: {raw}"
@@ -1159,17 +1410,27 @@ def main():
             pass
     enable_windows_ansi()
 
-    # Tu tao thu muc + file config mau khi chua co (moi cach cai deu co file).
-    global CONFIG
-    if ensure_user_config():
-        CONFIG = load_config()
-    # Don file config cu: dong nao trung y het mac dinh thi comment lai de
-    # tu day theo built-in (doi mac dinh o ban sau la an ngay).
+    # Config: chuyen file cu -> JSON, tao file mau khi chua co, roi don cac
+    # key trung mac dinh (de doi mac dinh o ban sau la an ngay).
+    global CONFIG, MODEL
+    dirty = False
+    migrated = migrate_legacy_config()
+    if migrated:
+        print(c(f"(config: da chuyen {LEGACY_CONFIG_PATH} -> {CONFIG_PATH}; "
+                f"key giu lai: {', '.join(migrated) or 'khong co'})", "90"),
+              file=sys.stderr)
+        dirty = True
+    dirty = ensure_user_config() or dirty
     pruned = prune_default_config()
     if pruned:
-        print(c(f"(config: da comment {', '.join(pruned)} vi trung mac dinh "
-                f"-> tu day dung built-in)", "90"), file=sys.stderr)
+        print(c(f"(config: da bo {', '.join(pruned)} khoi config.json vi trung "
+                f"mac dinh -> tu day dung built-in)", "90"), file=sys.stderr)
+        dirty = True
+    if dirty:
         CONFIG = load_config()
+        MODEL = cfg("model")
+    for w in CONFIG_WARNINGS:
+        err(w)
 
     argv = sys.argv[1:]
     double_click = not argv and is_double_clicked()
@@ -1192,28 +1453,26 @@ def main():
     if "-u" in argv or "--update" in argv or (argv and argv[0] == "update"):
         self_update()
     if argv and argv[0] == "config":
-        show_config()
+        show_config(argv[1:])
     hint, argv = take_value(argv, "-m", "--hint")
     model_override, argv = take_value(argv, "--model")
     print_only = "-p" in argv or "--print" in argv
     # ngon ngu: config lang=vi -> mac dinh --vi; --en de ep lai English
     vietnamese = (
         "--vi" in argv
-        or (CONFIG.get("lang", "").lower() == "vi" and "--en" not in argv)
+        or (cfg("lang") == "vi" and "--en" not in argv)
     )
     add_all = "-a" in argv or "--all" in argv
     select = "-s" in argv or "--select" in argv
     # tui: config tui=true -> mac dinh TUI; -s (nhap so) van uu tien hon
-    tui = "-t" in argv or "--tui" in argv or (
-        cfg_bool(CONFIG.get("tui", "")) and not select
-    )
+    tui = "-t" in argv or "--tui" in argv or (cfg("tui") and not select)
     auto_yes = "-y" in argv or "--yes" in argv
     amend = "--amend" in argv
     # push: --push hoac config push=always -> tu push sau commit
-    push_cfg = CONFIG.get("push", "ask").lower()
+    push_cfg = cfg("push")
     auto_push = "--push" in argv or push_cfg == "always"
     no_push = push_cfg == "never"
-    model = model_override or MODEL
+    model = model_override or cfg("model")
 
     if not in_repo():
         # Chay ngoai repo (vd double-click, chay tu task runner nhu Cowork):
