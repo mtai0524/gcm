@@ -60,7 +60,7 @@ import sys
 import urllib.error
 import urllib.request
 
-VERSION = "2.5.0"
+VERSION = "2.5.1"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -377,18 +377,51 @@ def config_source(key):
     return "mac dinh"
 
 
+def config_hint(key):
+    """Dong ghi chu '//key' cho mot key: mo ta + lua chon + mac dinh built-in."""
+    spec = CONFIG_SCHEMA[key]
+    choices = spec.get("choices")
+    text = spec["help"] + (f"  ({' | '.join(choices)})" if choices else "")
+    return f"{text}  - mac dinh: {json.dumps(spec['default'], ensure_ascii=False)}"
+
+
+def config_skeleton(overrides=None):
+    """Khung config.json: ghi chu DU moi key, gia tri CHI cho key ban da doi.
+
+    Nho vay mo file ra la thay het cac truong co the chinh (kem mac dinh cua
+    tung truong), ma van khong ghim mac dinh nao vao file.
+    """
+    overrides = overrides or {}
+    data = dict(CONFIG_HEADER)
+    for k in CONFIG_SCHEMA:
+        data[f"//{k}"] = config_hint(k)
+        if k in overrides:
+            data[k] = overrides[k]
+    return data
+
+
+def order_config(data):
+    """Sap xep lai file cho de doc: ghi chu chung -> tung cap '//key' + key."""
+    out = {}
+    for k, v in data.items():  # ghi chu chung (khong gan voi key nao) len dau
+        if k.startswith("//") and k[2:].strip().lower() not in CONFIG_SCHEMA:
+            out[k] = v
+    for k in CONFIG_SCHEMA:  # moi key: dong mo ta ngay tren gia tri
+        if f"//{k}" in data:
+            out[f"//{k}"] = data[f"//{k}"]
+        if k in data:
+            out[k] = data[k]
+    for k, v in data.items():  # key la cua nguoi dung: giu, khong xoa gium
+        out.setdefault(k, v)
+    return out
+
+
 def write_config_file(data, path=None):
-    """Ghi dict ra config.json (indent 2, key ghi chu '//' len dau)."""
+    """Ghi dict ra config.json (indent 2, da sap xep cho de doc)."""
     path = path or CONFIG_PATH
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    ordered = {k: v for k, v in data.items() if k.startswith("//")}
-    for k in CONFIG_SCHEMA:  # key cua gcm theo dung thu tu schema
-        if k in data:
-            ordered[k] = data[k]
-    for k, v in data.items():  # key la cua nguoi dung: giu, khong xoa gium
-        ordered.setdefault(k, v)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(ordered, f, indent=2, ensure_ascii=False)
+        json.dump(order_config(data), f, indent=2, ensure_ascii=False)
         f.write("\n")
 
 
@@ -489,56 +522,89 @@ def parse_legacy_config(path):
     return out
 
 
+def backup_path(path):
+    """Duong dan backup con trong: config.migrated, .migrated.1, .migrated.2...
+
+    KHONG BAO GIO de ban migrate sau de len ban truoc - file cu co the la ban
+    duy nhat con giu api key cua nguoi dung.
+    """
+    base = path + ".migrated"
+    if not os.path.exists(base):
+        return base
+    n = 1
+    while os.path.exists(f"{base}.{n}"):
+        n += 1
+    return f"{base}.{n}"
+
+
 def migrate_legacy_config():
     """Chuyen file cu ~/.config/gcm/config (key = value) sang config.json.
 
     Chi chay khi chua co config.json. Key trung mac dinh bi bo di. File cu
-    duoc doi ten thanh 'config.migrated' de lan sau khong doc lai.
-    Tra list key da chuyen.
+    duoc doi ten thanh 'config.migrated' (khong de len backup da co) de lan
+    sau khong doc lai. Tra list key da chuyen.
     """
     if os.path.exists(CONFIG_PATH) or not os.path.exists(LEGACY_CONFIG_PATH):
         return []
     kept = {k: v for k, v in parse_legacy_config(LEGACY_CONFIG_PATH).items()
             if v != CONFIG_DEFAULTS[k]}
     try:
-        data = dict(CONFIG_HEADER)
-        data.update(kept)
+        data = config_skeleton(kept)
+        data.setdefault("api_key", "")  # luon chua san cho de dan key vao
         write_config_file(data)
-        os.replace(LEGACY_CONFIG_PATH, LEGACY_CONFIG_PATH + ".migrated")
+        os.replace(LEGACY_CONFIG_PATH, backup_path(LEGACY_CONFIG_PATH))
     except OSError:
         return []
     return sorted(kept)
 
 
 def config_example_data():
-    """Noi dung config.example.json - sinh tu schema nen khong bao gio lech."""
-    data = {
-        "//": "gcm config mau - copy sang config.json roi XOA key khong doi.",
-        "//note": "Key khong co trong file se lay mac dinh built-in.",
-    }
-    for k, s in CONFIG_SCHEMA.items():
-        choices = s.get("choices")
-        data[f"//{k}"] = s["help"] + (f"  ({' | '.join(choices)})"
-                                      if choices else "")
-        data[k] = s["default"]
+    """Noi dung config.example.json - cung khung, nhung dien du moi mac dinh."""
+    data = config_skeleton(dict(CONFIG_DEFAULTS))
+    data["//"] = "gcm config mau - copy sang config.json roi XOA key khong doi."
+    data["//note"] = "Key khong co trong file se lay mac dinh built-in."
     return data
+
+
+def sync_config_hints():
+    """Cap nhat cac dong ghi chu '//key' trong config.json theo schema.
+
+    Chi dung toi key bat dau bang '//' - gia tri that cua nguoi dung KHONG bao
+    gio bi dung toi. Nho vay mo file ra luon thay du moi truong + mac dinh
+    hien tai, ke ca sau khi nang cap gcm. Tra True neu co sua file.
+    """
+    raw = read_config_raw()
+    if "//" not in raw:  # nguoi dung da don sach ghi chu -> ton trong
+        return False
+    wanted = {f"//{k}": config_hint(k) for k in CONFIG_SCHEMA}
+    if all(raw.get(k) == v for k, v in wanted.items()):
+        return False
+    raw.update(wanted)
+    try:
+        write_config_file(raw)
+    except OSError:
+        return False
+    return True
 
 
 def ensure_user_config():
     """Tao thu muc config + config.json + cac file mau khi chua co.
 
     Dam bao moi cach cai (MSI/pip/bash) deu co san file de nguoi dung sua.
-    Khong ghi de config.json da ton tai. Tra True neu vua tao config.json.
+    Khong ghi de config.json da ton tai (chi lam moi dong ghi chu '//key').
+    Tra True neu vua tao config.json.
     """
     created = False
     cfg_dir = os.path.dirname(CONFIG_PATH)
     try:
         os.makedirs(cfg_dir, exist_ok=True)
         if not os.path.exists(CONFIG_PATH):
-            data = dict(CONFIG_HEADER)
+            data = config_skeleton()
             data["api_key"] = ""  # cho san cho de dan key vao
             write_config_file(data)
             created = True
+        else:
+            sync_config_hints()
         example = os.path.join(cfg_dir, "config.example.json")
         with open(example, "w", encoding="utf-8") as f:  # luon lam moi theo schema
             json.dump(config_example_data(), f, indent=2, ensure_ascii=False)

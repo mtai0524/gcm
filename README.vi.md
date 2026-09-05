@@ -186,6 +186,11 @@ ghi trong file thì cứ theo mặc định built-in — nâng cấp gcm đổi 
 }
 ```
 
+File gcm tạo ra liệt kê **đủ** mọi key dưới dạng dòng ghi chú `"//key"` (mô tả +
+mặc định hiện tại), nhưng chỉ có *giá trị* cho những key bạn thật sự đổi — mở file
+ra là thấy hết các trường mà không key nào bị ghim mặc định. Các dòng ghi chú này
+được làm mới mỗi lần chạy; giá trị của bạn không bao giờ bị đụng tới.
+
 Thứ tự ưu tiên: **cờ CLI > env (`GROQ_API_KEY`, `GCM_MODEL`) > `config.json` >
 mặc định built-in**. `gcm config` in ra từng key kèm **nguồn** đang lấy:
 

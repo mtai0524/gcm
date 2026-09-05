@@ -215,3 +215,77 @@ def test_migrate_skipped_when_json_exists(core, cfg_path):
     assert core.migrate_legacy_config() == []
     assert read(cfg_path)["api_key"] == "gsk_new"
     assert legacy.exists()  # file cu giu nguyen, khong dong vao
+
+
+# ---- khung file: du truong de sua tay, khong ghim mac dinh ----
+
+def test_new_config_lists_every_key_as_a_hint(core, cfg_path):
+    core.ensure_user_config()
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    for key in core.CONFIG_KEYS:
+        assert f"//{key}" in raw          # mo file la thay du truong
+        assert core.CONFIG_DEFAULTS[key] != raw.get(key) or key == "api_key"
+    # ... nhung khong key nao bi ghim gia tri -> van theo mac dinh built-in
+    assert core.read_config_file()[0] == {}
+
+
+def test_hint_shows_the_current_default(core, cfg_path):
+    core.ensure_user_config()
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert core.DEFAULT_MODEL in raw["//model"]
+    assert "vi | en" in raw["//lang"]
+
+
+def test_sync_config_hints_refreshes_without_touching_values(core, cfg_path,
+                                                             monkeypatch):
+    cfg_path.parent.mkdir(parents=True)
+    cfg_path.write_text(json.dumps({"//": "header", "//model": "mo ta cu",
+                                    "lang": "vi"}), encoding="utf-8")
+    assert core.sync_config_hints() is True
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert raw["lang"] == "vi"                    # gia tri giu nguyen
+    assert raw["//model"] == core.config_hint("model")  # ghi chu duoc lam moi
+    assert "//push" in raw                        # key thieu duoc bo sung
+    assert core.sync_config_hints() is False      # idempotent
+
+
+def test_sync_config_hints_respects_a_stripped_file(core, cfg_path):
+    cfg_path.parent.mkdir(parents=True)
+    cfg_path.write_text(json.dumps({"lang": "vi"}), encoding="utf-8")
+    assert core.sync_config_hints() is False  # khong co header -> khong dong vao
+    assert json.loads(cfg_path.read_text(encoding="utf-8")) == {"lang": "vi"}
+
+
+def test_placeholder_api_key_survives_prune(core, cfg_path):
+    core.ensure_user_config()
+    assert core.prune_default_config() == []
+    assert "api_key" in json.loads(cfg_path.read_text(encoding="utf-8"))
+
+
+# ---- migrate khong duoc lam mat backup cu ----
+
+def test_migrate_never_overwrites_an_existing_backup(core, cfg_path):
+    legacy = cfg_path.parent / "config"
+    legacy.parent.mkdir(parents=True)
+    (legacy.parent / "config.migrated").write_text("api_key = gsk_backup\n",
+                                                   encoding="utf-8")
+    legacy.write_text("api_key = gsk_second\n", encoding="utf-8")
+
+    core.migrate_legacy_config()
+
+    # ban backup cu (co the la noi duy nhat con key) phai con nguyen
+    assert (legacy.parent / "config.migrated").read_text(
+        encoding="utf-8") == "api_key = gsk_backup\n"
+    assert (legacy.parent / "config.migrated.1").read_text(
+        encoding="utf-8") == "api_key = gsk_second\n"
+
+
+def test_migrated_config_has_the_full_skeleton(core, cfg_path):
+    legacy = cfg_path.parent / "config"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("lang = vi\n", encoding="utf-8")
+    core.migrate_legacy_config()
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert raw["lang"] == "vi"
+    assert "api_key" in raw            # co san cho de dan key vao
+    assert "//coauthor" in raw         # va du ghi chu moi truong

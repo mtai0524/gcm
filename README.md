@@ -186,6 +186,11 @@ take effect on your machine too — nothing is pinned by an old config file.
 }
 ```
 
+The file gcm creates lists **every** key as a `"//key"` hint line (description +
+current default) but only carries *values* for what you actually changed — so you
+can see all the fields without any default being pinned. Those hint lines are
+refreshed on each run; your values are never touched.
+
 Resolution order: **CLI flag > env (`GROQ_API_KEY`, `GCM_MODEL`) > `config.json` >
 built-in default**. `gcm config` prints every key with its value *and* its source:
 
