@@ -160,8 +160,9 @@ git -C ~/tools/gcm pull          # PowerShell: git -C $HOME\tools\gcm pull
 | `gcm -u`         | update gcm to the latest version |
 | `gcm -h` / `-v`  | help / version |
 
-After generating: `[Enter]` commit · `[p]` commit+push · `[e]` edit · `[r]` regenerate · `[n]` cancel.
-The header shows your branch and unpushed commit count (`main ↑2`).
+After generating: `[Enter]` commit · `[p]` commit+push · `[e]` edit · `[r]` regenerate ·
+`[m]` add a hint and regenerate · `[d]` view the staged diff · `[n]` cancel.
+The header shows your branch, unpushed commit count and diff size (`main ↑2 · 3 file +120 −15`).
 
 **Smart diff:** lockfiles (`package-lock.json`, `yarn.lock`...), `*.min.js` and binary
 files are still committed but their content is not sent to the LLM; oversized files
@@ -253,17 +254,40 @@ cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # then edit the pro
 
 `gcm -s` (or `gcm` when nothing is staged) lists each changed file to pick by number:
 ```
-Chọn file để stage (3 thay đổi):
+[main ↑2] Chọn file để stage (3 thay đổi, 1 đã stage):
   ●  1. added     src/app.py          ● staged · ○ not staged
   ○  2. modified  README.md
   ○  3. new       src/Web/Chart.razor
-  số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
+  số ('1 3', '2-5') · 'a' tất cả · '-2' bỏ file 2 · 'i' đảo · 'd 3' diff · '?' thêm · Enter · 'q' hủy
 ```
+What you type is the exact set that gets staged (a pre-staged ● file you leave
+out is unstaged). `-2` excludes, `a -2 -4` is "all but 2 and 4", `i` inverts the
+current staging, `d 3` shows file 3's diff (`d` alone: everything staged),
+`t` jumps to the TUI, `Enter` keeps what's staged — or takes everything when
+nothing is.
 
-`gcm -t` opens a TUI instead — move with `↑↓` (or `j`/`k`), toggle with `Space`,
-`d` to preview the diff of the highlighted file, `a` for all, `Enter` to confirm.
-Falls back to the numbered picker if the terminal doesn't support it (e.g. piped
-input). Run `gcm config set tui true` to make it the default.
+`gcm -t` opens a full-screen TUI instead — move with `↑↓` (or `j`/`k`,
+`PgUp`/`PgDn`, `Home`/`End`), toggle with `Space`, `a` all / `i` invert, `d` to
+open the highlighted file's diff in a scrollable pager, `Enter` to confirm, `q`
+or `Esc` to cancel. Long lists scroll, long paths are shortened to fit the
+terminal, and nothing is left behind in your scrollback. Files that were already
+staged start ticked; un-ticking one unstages it, so what you see ticked is
+exactly what gets committed. Falls back to the numbered picker if the terminal
+doesn't support it (e.g. piped input). Run `gcm config set tui true` to make it
+the default.
+
+### GUI (`gcm --gui`, or double-click `gcm.exe`)
+
+A small window for people who'd rather not type: pick a repo (the last one
+reopens automatically), tick files in a scrollable list (✓ column / Space /
+double-click, plus All · None · Invert), see the **diff of the selected file**
+with +/− highlighting, generate the message (⚡, or 🔁 to try a different
+wording), edit it in place — the title length is checked against 72 chars — and
+Commit, optionally with Push. Git and API calls run in the background so the
+window never freezes, and errors show up in the status bar and a dialog instead
+of vanishing in a hidden console. Shortcuts: `Ctrl+G` generate, `Ctrl+Enter`
+commit, `F5` reload, `Ctrl+O` choose repo. Running `gcm` outside a git repo also
+opens the GUI so you can pick one.
 
 <details>
 <summary>Technical notes</summary>

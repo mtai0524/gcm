@@ -160,8 +160,9 @@ Lệnh `gcm` trỏ vào thư mục clone nên pull là xong, không cài lại.
 | `gcm -u`         | cập nhật gcm lên bản mới nhất |
 | `gcm -h` / `-v`  | trợ giúp / version |
 
-Sau khi sinh: `[Enter]` commit · `[p]` commit+push · `[e]` sửa · `[r]` tạo lại · `[n]` hủy.
-Khung review hiện branch + số commit chưa push (`main ↑2`).
+Sau khi sinh: `[Enter]` commit · `[p]` commit+push · `[e]` sửa · `[r]` tạo lại ·
+`[m]` thêm gợi ý rồi tạo lại · `[d]` xem diff đã stage · `[n]` hủy.
+Khung review hiện branch, số commit chưa push và cỡ diff (`main ↑2 · 3 file +120 −15`).
 
 **Smart diff:** lockfile (`package-lock.json`, `yarn.lock`...), `*.min.js`, file binary
 vẫn được commit nhưng không gửi nội dung cho LLM; file quá to được tóm tắt bằng
@@ -252,16 +253,35 @@ cp system_prompt.example.md ~/.config/gcm/system_prompt.md   # rồi sửa promp
 
 `gcm -s` (hoặc `gcm` khi chưa stage gì) liệt kê từng file để chọn bằng số:
 ```
-Chọn file để stage (3 thay đổi):
+[main ↑2] Chọn file để stage (3 thay đổi, 1 đã stage):
   ●  1. added     src/app.py          ● đã stage · ○ chưa
   ○  2. modified  README.md
   ○  3. new       src/Web/Chart.razor
-  số ('1 3', '1-3') · 'a' tất cả · Enter = tất cả · 'q' hủy
+  số ('1 3', '2-5') · 'a' tất cả · '-2' bỏ file 2 · 'i' đảo · 'd 3' diff · '?' thêm · Enter · 'q' hủy
 ```
+Gõ gì thì stage đúng tập đó (file ● đã stage sẵn mà không chọn sẽ bị unstage).
+`-2` loại file 2, `a -2 -4` là "tất cả trừ 2 và 4", `i` đảo trạng thái stage hiện
+tại, `d 3` xem diff file 3 (`d` không số: toàn bộ đã stage), `t` nhảy sang TUI,
+`Enter` giữ nguyên những gì đã stage — hoặc lấy hết khi chưa stage gì.
 
-`gcm -t` mở TUI thay vì nhập số — di chuyển `↑↓` (hoặc `j`/`k`), `Space` tick chọn,
-`d` xem diff file đang trỏ, `a` tất cả, `Enter` xong. Tự về chế độ nhập số nếu
+`gcm -t` mở TUI toàn màn hình thay vì nhập số — di chuyển `↑↓` (hoặc `j`/`k`,
+`PgUp`/`PgDn`, `Home`/`End`), `Space` tick chọn, `a` tất cả / `i` đảo chọn, `d` mở
+diff của file đang trỏ trong pager cuộn được, `Enter` xong, `q` hoặc `Esc` huỷ.
+Danh sách dài tự cuộn, đường dẫn dài tự rút gọn theo độ rộng terminal, thoát ra
+không để lại rác trong scrollback. File đã stage sẵn được tick sẵn; bỏ tick là
+unstage luôn — nhìn thấy tick gì là commit đúng cái đó. Tự về chế độ nhập số nếu
 terminal không hỗ trợ (vd pipe). Chạy `gcm config set tui true` để thành mặc định.
+
+### GUI (`gcm --gui`, hoặc nhấp đúp `gcm.exe`)
+
+Cửa sổ nhỏ cho ai ngại gõ lệnh: chọn repo (repo mở lần trước tự mở lại), tick
+file trong danh sách cuộn được (cột ✓ / Space / nhấp đúp, thêm Tất cả · Không ·
+Đảo), xem **diff của file đang chọn** tô màu +/−, sinh message (⚡, hoặc 🔁 để
+thử cách viết khác), sửa ngay tại chỗ — có đếm độ dài tiêu đề so với 72 ký tự —
+rồi Commit, kèm Push nếu tick. Lệnh git và gọi API chạy nền nên cửa sổ không bao
+giờ đơ; lỗi hiện ở thanh trạng thái và hộp thoại thay vì biến mất trong console
+đã ẩn. Phím tắt: `Ctrl+G` sinh, `Ctrl+Enter` commit, `F5` tải lại, `Ctrl+O` chọn
+repo. Chạy `gcm` ngoài git repo cũng tự mở GUI để chọn repo.
 
 <details>
 <summary>Ghi chú kỹ thuật</summary>

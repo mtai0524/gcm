@@ -6,7 +6,8 @@ Khong can API tra phi (Groq free tier). Thuan stdlib, khong can pip install.
 
 Staging:
   gcm -s             Chon file de stage (nhap so)
-  gcm -t             Chon file kieu TUI (mui ten + space, 'd' xem diff)
+  gcm -t             Chon file kieu TUI toan man hinh (↑↓/PgUp/PgDn, space
+                     tick, a/i tat ca/dao, d xem diff cuon duoc, q huy)
   gcm -a             git add -A truoc khi sinh
 
 Message:
@@ -27,8 +28,10 @@ Khac:
   gcm -u             Tu cap nhat gcm len ban moi nhat (git pull)
   gcm -h             Tro giup
 
-Khi review: [Enter] commit . [p] commit+push . [e] sua . [r] tao lai . [n] huy
-Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file.
+Khi review: [Enter] commit . [p] commit+push . [e] sua . [r] tao lai
+  [m] them goi y roi tao lai . [d] xem diff da stage . [n] huy
+Neu chua stage gi ma working tree co thay doi, gcm tu mo bo chon file (nhap
+so: '1 3', '2-5', 'a' tat ca, '-2' bo file 2, 'i' dao, 'd 3' xem diff, 't' TUI).
 Chay ngoai git repo: gcm tu mo giao dien de chon repo (khong co GUI thi bao loi).
 Lockfile/binary van duoc commit nhung khong gui noi dung cho LLM.
 
@@ -55,12 +58,14 @@ API key: env > config.json > key nhung san luc build (neu ban build co).
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import unicodedata
 import urllib.error
 import urllib.request
 
-VERSION = "2.5.1"
+VERSION = "2.6.0"
 LOGO = r"""
 ██████╗ ███████╗██╗   ██╗██████╗ ██╗   ██╗██╗██████╗ ███████╗
 ██╔══██╗██╔════╝██║   ██║██╔══██╗██║   ██║██║██╔══██╗██╔════╝
@@ -830,14 +835,18 @@ def open_gui(hide_console=False):
             ctypes.windll.kernel32.FreeConsole()
         except Exception:
             pass
+    global GUI_MODE
     try:
         import gcm_gui
     except ImportError as e:
         return False, str(e)
+    GUI_MODE = True  # loi git/API -> GcmError de GUI hien, khong sys.exit
     try:
         gcm_gui.run_gui(sys.modules[__name__])
     except Exception as e:  # tkinter.TclError khi khong co man hinh (SSH/CI)
         return False, str(e)
+    finally:
+        GUI_MODE = False
     return True, ""
 
 
@@ -857,6 +866,24 @@ def err(msg):
     print(c("error: ", "31") + msg, file=sys.stderr)
 
 
+class GcmError(Exception):
+    """Loi git/API o che do GUI (thay cho sys.exit de cua so hien duoc loi)."""
+
+
+# open_gui() bat True: moi fail() se raise GcmError thay vi in loi + thoat.
+GUI_MODE = False
+
+
+def fail(msg, hint=None):
+    """Bao loi roi dung: CLI in ra stderr + sys.exit(1); GUI raise GcmError."""
+    if GUI_MODE:
+        raise GcmError(msg + (f"\n{hint}" if hint else ""))
+    err(msg)
+    if hint:
+        print(c("  " + hint, "90"), file=sys.stderr)
+    sys.exit(1)
+
+
 def run_git(args, check=True):
     """Run a git command, return stdout (stripped)."""
     res = subprocess.run(
@@ -866,8 +893,7 @@ def run_git(args, check=True):
         cwd=REPO_ROOT,
     )
     if check and res.returncode != 0:
-        err(res.stderr.strip() or f"git {' '.join(args)} failed")
-        sys.exit(1)
+        fail(res.stderr.strip() or f"git {' '.join(args)} failed")
     return res.stdout
 
 
@@ -981,59 +1007,160 @@ def status_label(code):
     return c(code.ljust(9), "90")
 
 
-def parse_selection(raw, n):
-    chosen = set()
+def parse_pick(raw, n):
+    """Phan tich lua chon: '1 3', '2-5', 'a', '-2' (loai), 'a -2 -4'.
+
+    Tra list so (1-based) da sap xep; [] neu khong chon gi; None neu co token
+    khong hieu. Chi co token loai (-N) thi hieu la 'tat ca tru N'.
+    """
+    include, exclude, saw_include = set(), set(), False
+
+    def span(tok):
+        if tok.isdigit():
+            return [int(tok)]
+        a, _, b = tok.partition("-")
+        if a.isdigit() and b.isdigit():
+            return list(range(int(a), int(b) + 1))
+        return None
+
     for tok in raw.replace(",", " ").split():
-        if "-" in tok:
-            a, _, b = tok.partition("-")
-            if a.isdigit() and b.isdigit():
-                for k in range(int(a), int(b) + 1):
-                    if 1 <= k <= n:
-                        chosen.add(k)
-        elif tok.isdigit():
-            k = int(tok)
-            if 1 <= k <= n:
-                chosen.add(k)
-    return sorted(chosen)
+        if tok in ("a", "all", "*"):
+            include |= set(range(1, n + 1))
+            saw_include = True
+            continue
+        target, neg = (exclude, True) if tok.startswith("-") else (include, False)
+        nums = span(tok[1:] if neg else tok)
+        if nums is None:
+            return None
+        target |= {k for k in nums if 1 <= k <= n}
+        saw_include = saw_include or not neg
+    if not saw_include and exclude:
+        include = set(range(1, n + 1))
+    return sorted(include - exclude)
+
+
+def show_diff_text(title, text):
+    """Xem mot doan diff: pager cuon duoc neu terminal cho phep, khong thi in."""
+    lines = [c(ln, _DIFF_COLORS[k]) if k in _DIFF_COLORS else ln
+             for k, ln in classify_diff(text)] or [c("(khong co gi)", "90")]
+    if tui_supported():
+        pager(title, lines)
+    else:
+        print(c(f"--- {title} ---", "1"))
+        print("\n".join(lines))
+
+
+def view_file_diff(code, path):
+    """Xem diff 1 file trong bo chon: pager neu duoc, khong thi in ra."""
+    if tui_supported():
+        diff_pager(code, path)
+        return
+    title, lines = diff_lines(code, path)
+    print(c(f"--- {title} ---", "1"))
+    print("\n".join(lines[:80]))
+    if len(lines) > 80:
+        print(c(f"... ({len(lines) - 80} dong nua)", "90"))
+
+
+PICK_HELP = (
+    "  so ('1 3', '2-5') chon dung cac file do . 'a' tat ca . '-2' bo file 2\n"
+    "  'i' dao trang thai stage . 'd 3' xem diff file 3 ('d' = toan bo)\n"
+    "  't' mo bo chon TUI . Enter = {enter} . 'q' huy"
+)
 
 
 def select_files(default_all=False):
+    """Bo chon file nhap so (che do `gcm` thuong).
+
+    Lenh: so/khoang ('1 3', '2-5'), 'a' tat ca, '-N' loai N, 'i' dao, 'd N'
+    xem diff, 't' sang TUI, '?' tro giup, Enter giu nguyen/tat ca, 'q' huy.
+    Chon xong thi stage DUNG tap da chon (file ● da stage ma khong chon se
+    duoc unstage). Tra True neu co stage, False neu giu nguyen.
+    """
     items = changed_files()
     if not items:
         return False
     n = len(items)
-    print(c(f"Chon file de stage ({n} thay doi):", "1"))
-    for i, (code, path) in enumerate(items, 1):
-        staged = code[0] not in " ?"
-        mark = c("\u25cf", "32") if staged else c("\u25cb", "90")
-        print(f"  {mark} {c(str(i).rjust(2) + '.', '1')} {status_label(code)} {path}")
-    enter_hint = "Enter = tat ca" if default_all else "Enter = giu nguyen"
-    print(c(
-        f"  so ('1 3', '1-3') . 'a' tat ca . {enter_hint} . 'q' huy",
-        "90",
-    ))
-    try:
-        raw = input(c("> ", "1")).strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        sys.exit(1)
+    branch, ahead = branch_status()
+    all_paths = [p for _, p in items]
 
-    if raw in ("q", "quit", "n"):
-        print("Da huy.")
-        sys.exit(0)
-    if raw == "" and not default_all:
-        return False
-    if raw in ("a", "all") or (raw == "" and default_all):
-        sel = list(range(1, n + 1))
-    else:
-        sel = parse_selection(raw, n)
-    if not sel:
-        err("khong chon file nao hop le.")
-        sys.exit(1)
-    paths = [items[i - 1][1] for i in sel]
-    run_git(["add", "--"] + paths)
-    print(c(f"da stage {len(paths)} file.", "32"))
-    return True
+    def staged_idx():
+        return {i for i, (code, _) in enumerate(changed_files())
+                if code[0] not in " ?"}
+
+    def show(staged, full_help=False):
+        cols = term_size()[0]
+        head = f"[{branch}" + (f" ↑{ahead}" if ahead else "") + "]"
+        print(c(head, "36") + c(f" Chon file de stage ({n} thay doi"
+                                + (f", {len(staged)} da stage" if staged
+                                   else "") + "):", "1"))
+        path_w = max(20, cols - 22)
+        for i, (code, path) in enumerate(items, 1):
+            mark = c("\u25cf", "32") if (i - 1) in staged else c("\u25cb", "90")
+            print(f"  {mark} {c(str(i).rjust(2) + '.', '1')} "
+                  f"{status_label(code)} {shorten_path(path, path_w)}")
+        enter = "tat ca" if (default_all or not staged) else "giu nguyen (●)"
+        text = PICK_HELP.format(enter=enter)
+        print(c(text if full_help else text.splitlines()[0]
+                + f" . 'i' dao . 'd 3' diff . '?' them . Enter = {enter} . 'q' huy",
+                "90"))
+
+    staged = staged_idx()
+    full_help = False
+    while True:
+        show(staged, full_help)
+        full_help = False
+        try:
+            raw = input(c("> ", "1")).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(1)
+
+        if raw in ("q", "quit", "n"):
+            print("Da huy.")
+            sys.exit(0)
+        if raw in ("?", "h", "help"):
+            full_help = True
+            continue
+        if raw == "t":
+            if tui_supported():
+                return tui_select(default_all)
+            print(c("terminal khong ho tro TUI (can tty).", "90"))
+            continue
+        if raw == "d" or raw.startswith("d "):
+            arg = raw[1:].strip()
+            if not arg:
+                show_diff_text("diff da stage", run_git(
+                    ["diff", "--staged", "--no-color"], check=False))
+            elif arg.isdigit() and 1 <= int(arg) <= n:
+                view_file_diff(*items[int(arg) - 1])
+            else:
+                err(f"dung: d <so 1-{n}>")
+            continue
+        if raw == "":
+            if default_all or not staged:
+                chosen = list(range(1, n + 1))
+            else:
+                return False  # giu nguyen nhung gi da stage
+        elif raw == "i":
+            chosen = [i + 1 for i in range(n) if i not in staged]
+            if not chosen:
+                err("dao xong thi khong con file nao - chon lai.")
+                continue
+        else:
+            chosen = parse_pick(raw, n)
+            if chosen is None:
+                err("khong hieu. Go ? de xem huong dan.")
+                continue
+            if not chosen:
+                err("khong chon file nao hop le.")
+                continue
+        paths = [items[i - 1][1] for i in chosen]
+        stage_files(paths, all_paths)
+        print(c(f"da stage {len(paths)} file:", "32"),
+              c(", ".join(paths) if len(paths) <= 6 else
+                ", ".join(paths[:6]) + f", ... (+{len(paths) - 6})", "90"))
+        return True
 
 
 def tui_supported():
@@ -1050,125 +1177,387 @@ def tui_supported():
         return False
 
 
-def _map_key(ch):
-    if ch in ("\r", "\n"):
-        return "enter"
-    if ch == " ":
-        return "space"
-    if ch in ("k", "K"):
-        return "up"
-    if ch in ("j", "J"):
-        return "down"
-    if ch in ("a", "A"):
-        return "all"
-    if ch in ("d", "D"):
-        return "diff"
-    if ch in ("q", "Q", "\x03", "\x1b"):
-        return "quit"
-    return ""
+# Phim -> token dung chung cho ca picker va pager. Ho tro ca vim-style (j/k).
+_KEY_CHARS = {
+    "\r": "enter", "\n": "enter", " ": "space",
+    "k": "up", "K": "up", "j": "down", "J": "down",
+    "a": "all", "A": "all", "i": "invert", "I": "invert",
+    "d": "diff", "D": "diff",
+    "g": "home", "G": "end",
+    "q": "quit", "Q": "quit", "\x03": "quit", "\x1b": "quit",
+}
+# Windows: msvcrt tra prefix \x00/\xe0 roi 1 byte ma phim.
+_KEY_WIN = {
+    b"H": "up", b"P": "down", b"G": "home", b"O": "end",
+    b"I": "pgup", b"Q": "pgdn",
+}
+# POSIX: chuoi escape sau ESC (\x1b[A, \x1b[5~, \x1bOH ...).
+_KEY_ESC = {
+    "[A": "up", "[B": "down", "OA": "up", "OB": "down",
+    "[H": "home", "[F": "end", "OH": "home", "OF": "end",
+    "[1~": "home", "[4~": "end", "[7~": "home", "[8~": "end",
+    "[5~": "pgup", "[6~": "pgdn",
+}
 
 
 def read_key():
-    """Đọc 1 phím, trả token: up/down/space/enter/all/quit hoặc ''."""
+    """Doc 1 phim, tra token: up/down/pgup/pgdn/home/end/space/enter/all/
+    invert/diff/quit hoac '' (phim khong dung toi)."""
     if os.name == "nt":
         import msvcrt
         ch = msvcrt.getch()
-        if ch in (b"\x00", b"\xe0"):  # phím mũi tên: prefix rồi mã
-            return {b"H": "up", b"P": "down"}.get(msvcrt.getch(), "")
-        return _map_key(ch.decode("latin-1", "ignore"))
-    import termios, tty
+        if ch in (b"\x00", b"\xe0"):  # phim dac biet: prefix roi ma phim
+            return _KEY_WIN.get(msvcrt.getch(), "")
+        return _KEY_CHARS.get(ch.decode("latin-1", "ignore"), "")
+    import select
+    import termios
+    import tty
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
         ch = sys.stdin.read(1)
-        if ch == "\x1b":  # ESC hoặc chuỗi mũi tên \x1b[A
-            seq = sys.stdin.read(2)
-            return {"[A": "up", "[B": "down"}.get(seq, "quit")
-        return _map_key(ch)
+        if ch != "\x1b":
+            return _KEY_CHARS.get(ch, "")
+        # ESC don (khong co byte theo sau trong ~50ms) = thoat; con lai la
+        # chuoi mui ten/Home/End/PgUp... doc den byte ket thuc (chu cai / ~).
+        seq = ""
+        while select.select([fd], [], [], 0.05)[0]:
+            seq += sys.stdin.read(1)
+            if seq[-1].isalpha() or seq[-1] == "~":
+                break
+            if len(seq) > 6:
+                break
+        if not seq:
+            return "quit"
+        return _KEY_ESC.get(seq, "")
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def show_file_diff(code, path, max_lines=40):
-    """In diff (co mau) cua 1 file trong picker; file moi thi in noi dung."""
-    print()
+def term_size():
+    """(cot dung duoc, dong) cua terminal; fallback 80x24 khi khong hoi duoc.
+
+    Cot dung duoc = cot that - 1: ghi dung toi cot cuoi cung lam conhost tu
+    xuong dong -> du 1 dong -> troi ca man hinh. Chua toi 1 cot la an toan.
+    """
+    size = shutil.get_terminal_size(fallback=(80, 24))
+    return max(40, size.columns - 1), max(10, size.lines)
+
+
+def char_width(ch):
+    """Do rong hien thi cua 1 ky tu (CJK/emoji chiem 2 cot, ky tu dieu khien 0)."""
+    if unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Cc"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+
+def text_width(s):
+    return sum(char_width(ch) for ch in s)
+
+
+def clip_text(s, width, ellipsis="…"):
+    """Cat chuoi (khong mau) vua `width` cot, them dau '…' neu bi cat."""
+    if text_width(s) <= width:
+        return s
+    keep = max(0, width - text_width(ellipsis))
+    out, w = [], 0
+    for ch in s:
+        cw = char_width(ch)
+        if w + cw > keep:
+            break
+        out.append(ch)
+        w += cw
+    return "".join(out) + ellipsis
+
+
+def pad_text(s, width):
+    """Dem khoang trang ben phai cho du `width` cot (chuoi khong mau)."""
+    return s + " " * max(0, width - text_width(s))
+
+
+def shorten_path(path, width):
+    """Rut gon duong dan vua `width` cot, giu ten file: 'src/…/Chart.razor'."""
+    if text_width(path) <= width:
+        return path
+    parts = path.replace("\\", "/").split("/")
+    name = parts[-1]
+    if len(parts) == 1 or text_width(name) + 2 >= width:
+        return clip_text(path, width)
+    # Giu cang nhieu thu muc dau cang tot, roi '…/' roi ten file
+    head = ""
+    for part in parts[:-1]:
+        cand = head + part + "/"
+        if text_width(cand) + 2 + text_width(name) > width:
+            break
+        head = cand
+    return head + "…/" + name
+
+
+class _Screen:
+    """Alternate screen buffer + an con tro; thoat la tra terminal nhu cu.
+
+    Dung `with _Screen():` de moi duong thoat (Enter, q, Ctrl+C, loi) deu don
+    dep man hinh, khong de lai rac trong scrollback. Long nhau (pager mo tu
+    trong TUI) thi chi lop ngoai cung bat/tat man hinh.
+    """
+    depth = 0
+
+    def __enter__(self):
+        if _Screen.depth == 0:
+            sys.stdout.write("\033[?1049h\033[?25l\033[H\033[2J")
+            sys.stdout.flush()
+        _Screen.depth += 1
+        return self
+
+    def __exit__(self, *exc):
+        _Screen.depth -= 1
+        if _Screen.depth == 0:
+            sys.stdout.write("\033[?25h\033[?1049l")
+            sys.stdout.flush()
+        return False
+
+    @classmethod
+    def nested(cls):
+        return cls()
+
+    @staticmethod
+    def render(lines):
+        """Ve lai toan bo man hinh tu goc tren-trai (moi dong tu xoa phan du)."""
+        sys.stdout.write("\033[H" + "\n".join("\033[2K" + ln for ln in lines)
+                         + "\033[J")
+        sys.stdout.flush()
+
+
+def _scroll_window(cursor, top, total, height):
+    """Doi `top` de `cursor` luon nam trong cua so [top, top+height)."""
+    if total <= height:
+        return 0
+    if cursor < top:
+        top = cursor
+    elif cursor >= top + height:
+        top = cursor - height + 1
+    return max(0, min(top, total - height))
+
+
+def classify_diff(text):
+    """Text diff (khong mau) -> [(loai, dong)] de to mau / hien thi."""
+    def kind(ln):
+        if ln.startswith("+++") or ln.startswith("---"):
+            return "head"
+        if ln.startswith("@@"):
+            return "hunk"
+        if ln.startswith("+"):
+            return "add"
+        if ln.startswith("-"):
+            return "del"
+        if ln.startswith("diff ") or ln.startswith("index "):
+            return "meta"
+        return "ctx"
+    return [(kind(ln), ln.expandtabs(4))
+            for ln in text.rstrip("\n").splitlines()]
+
+
+def diff_entries(code, path):
+    """Diff cua 1 file de hien thi: (tieu de, [(loai, dong)]).
+
+    loai: add | del | hunk | head | meta | ctx | note. TUI to mau bang ANSI,
+    GUI to mau bang tag - cung mot nguon du lieu.
+    """
     if code == "??":
+        full = os.path.join(REPO_ROOT or ".", path)
         try:
-            full = os.path.join(REPO_ROOT or ".", path)
-            with open(full, encoding="utf-8", errors="replace") as f:
-                body = f.read(8000)
+            with open(full, "rb") as f:
+                raw = f.read(200_000)
         except OSError as e:
-            body = f"(khong doc duoc: {e})"
-        print(c(f"--- {path} (file moi) ---", "1"))
-        lines = body.splitlines() or ["(file rong)"]
-    else:
-        d = run_git(["diff", "--color", "HEAD", "--", path], check=False)
-        print(c(f"--- diff {path} ---", "1"))
-        lines = d.rstrip().splitlines() or ["(khong co thay doi)"]
-    print("\n".join(lines[:max_lines]))
-    if len(lines) > max_lines:
-        print(c(f"... ({len(lines) - max_lines} dong nua)", "90"))
-    print(c("nhan phim bat ky de quay lai...", "90"))
-    read_key()
+            return f"{path} (file moi)", [("note", f"(khong doc duoc: {e})")]
+        if b"\0" in raw[:8000]:
+            return f"{path} (file moi)", [("note", "(file nhi phan)")]
+        body = raw.decode("utf-8", "replace").splitlines()
+        entries = [("add", "+" + ln.expandtabs(4)) for ln in body] or \
+            [("note", "(file rong)")]
+        if len(raw) >= 200_000:
+            entries.append(("note", "... (file qua lon, chi hien phan dau)"))
+        return f"{path} (file moi, {len(body)} dong)", entries
+
+    out = run_git(["diff", "--no-color", "HEAD", "--", path], check=False)
+    entries = classify_diff(out)
+    return f"diff {path}", entries or [
+        ("note", "(khong co thay doi so voi HEAD)")]
+
+
+_DIFF_COLORS = {"add": "32", "del": "31", "hunk": "36", "head": "1",
+                "meta": "90", "note": "90"}
+
+
+def diff_lines(code, path):
+    """Noi dung xem trong pager TUI: (tieu de, [dong da to mau ANSI])."""
+    title, entries = diff_entries(code, path)
+    return title, [c(ln, _DIFF_COLORS[k]) if k in _DIFF_COLORS else ln
+                   for k, ln in entries]
+
+
+def clip_ansi(s, width):
+    """Cat chuoi CO ma mau vua `width` cot; ma mau khong tinh do rong."""
+    out, w, i = [], 0, 0
+    while i < len(s):
+        if s[i] == "\033":  # copy nguyen chuoi escape \033[...m
+            j = s.find("m", i)
+            if j == -1:
+                break
+            out.append(s[i:j + 1])
+            i = j + 1
+            continue
+        cw = char_width(s[i])
+        if w + cw > width:
+            out.append("\033[0m")
+            return "".join(out)
+        out.append(s[i])
+        w += cw
+        i += 1
+    return "".join(out)
+
+
+def pager(title, lines):
+    """Xem mot khoi text ngay trong terminal: cuon ↑↓/PgUp/PgDn/Home/End.
+
+    Tu mo alternate screen; neu dang o trong TUI (da mo san) thi dung chung.
+    """
+    top = 0
+    with _Screen.nested():
+        while True:
+            cols, rows = term_size()
+            height = rows - 2  # 1 dong tieu de + 1 dong huong dan
+            top = max(0, min(top, len(lines) - height))
+            end = min(len(lines), top + height)
+            pos = f"{top + 1}-{end}/{len(lines)}" if lines else "0/0"
+            screen = [
+                clip_ansi(c(f" {title}", "1") + c(f"  {pos}", "90"), cols),
+            ]
+            screen += [clip_ansi(" " + ln, cols) for ln in lines[top:end]]
+            screen += [""] * (height - (end - top))
+            screen.append(clip_ansi(
+                c(" ↑↓ cuon . PgUp/PgDn trang . Home/End . q/d/Enter quay lai",
+                  "90"), cols))
+            _Screen.render(screen)
+
+            key = read_key()
+            if key in ("quit", "diff", "enter"):
+                return
+            if key == "up":
+                top -= 1
+            elif key == "down":
+                top += 1
+            elif key == "pgup":
+                top -= height
+            elif key in ("pgdn", "space"):
+                top += height
+            elif key == "home":
+                top = 0
+            elif key == "end":
+                top = len(lines)
+
+
+def diff_pager(code, path):
+    """Xem diff cua 1 file ngay trong TUI (pager cuon duoc)."""
+    title, lines = diff_lines(code, path)
+    pager(title, lines)
 
 
 def tui_select(default_all=False):
-    """Bộ chọn file kiểu TUI: ↑↓ di chuyển, space chọn, d xem diff, enter xong."""
+    """Bo chon file kieu TUI: ↑↓ di chuyen, space tick, d xem diff, Enter xong.
+
+    Chay tren alternate screen (khong de lai rac), tu cuon khi danh sach dai
+    hon man hinh, duong dan dai duoc rut gon theo do rong terminal.
+    Ket thuc: stage DUNG nhung file da tick (file da stage san ma bo tick se
+    duoc unstage). Tra True neu co stage, False neu khong co gi de chon.
+    """
     items = changed_files()
     if not items:
         return False
     n = len(items)
-    branch, _ = branch_status()
+    branch, ahead = branch_status()
     selected = {i for i, (code, _) in enumerate(items) if code[0] not in " ?"}
     if default_all and not selected:
         selected = set(range(n))
-    cursor = 0
-    rendered = 0
+    cursor, top, notice = 0, 0, ""
 
     def draw():
-        nonlocal rendered
-        if rendered:
-            sys.stdout.write(f"\033[{rendered}A")  # quay lên đầu khối
-        lines = [
-            c(f"[{branch}] Chon file de stage ({len(selected)}/{n})", "1")
-            + c("  ↑↓ chon . space tick . d diff . a tat ca . enter xong . q huy",
-                "90"),
-        ]
-        for i, (code, path) in enumerate(items):
-            box = c("[x]", "32") if i in selected else "[ ]"
-            pointer = c(">", "36") if i == cursor else " "
-            lines.append(f" {pointer} {box} {status_label(code)} {path}")
-        sys.stdout.write("\n".join("\033[2K" + ln for ln in lines) + "\n")
-        sys.stdout.flush()
-        rendered = len(lines)
+        nonlocal top
+        cols, rows = term_size()
+        height = max(3, rows - 4)  # tieu de + ke + ... + list + ke + huong dan
+        top = _scroll_window(cursor, top, n, height)
+        end = min(n, top + height)
 
-    while True:
-        draw()
-        key = read_key()
-        if key == "up":
-            cursor = (cursor - 1) % n
-        elif key == "down":
-            cursor = (cursor + 1) % n
-        elif key == "space":
-            selected ^= {cursor}
-        elif key == "all":
-            selected = set() if len(selected) == n else set(range(n))
-        elif key == "diff":
-            show_file_diff(*items[cursor])
-            rendered = 0  # menu cu da troi len, ve lai menu moi
-        elif key == "enter":
-            break
-        elif key == "quit":
-            print("Da huy.")
-            sys.exit(0)
+        head = f" [{branch}" + (f" ↑{ahead}" if ahead else "") + "]"
+        title = c(head, "36") + c(f" Chon file de stage", "1") \
+            + c(f"  {len(selected)}/{n} da tick", "32" if selected else "90")
+        screen = [clip_ansi(title, cols), c("─" * cols, "90")]
+        label_w = 9  # do rong nhan trang thai (status_label)
+        path_w = cols - (3 + 4 + label_w + 2)  # ' > ' + '[x] ' + nhan + le
+        for i in range(top, end):
+            code, path = items[i]
+            box = c("[x]", "32") if i in selected else c("[ ]", "90")
+            pointer = c(">", "36;1") if i == cursor else " "
+            name = shorten_path(path, path_w)
+            line = f" {pointer} {box} {status_label(code)} " + (
+                c(name, "1") if i == cursor else name)
+            screen.append(clip_ansi(line, cols))
+        screen += [""] * (height - (end - top))
+        more = []
+        if top > 0:
+            more.append(f"↑ {top} file nua")
+        if end < n:
+            more.append(f"↓ {n - end} file nua")
+        screen.append(c("─" * cols, "90") if not more else
+                      clip_ansi(c(" " + "   ".join(more), "33"), cols))
+        hint = (" ↑↓ chon . space tick . a tat ca . i dao . d diff . "
+                "Enter xong . q huy")
+        screen.append(clip_ansi(
+            c(notice, "31;1") if notice else c(hint, "90"), cols))
+        _Screen.render(screen)
 
-    if not selected:
-        err("khong chon file nao.")
-        sys.exit(1)
+    with _Screen():
+        while True:
+            draw()
+            key = read_key()
+            notice = ""
+            if key == "up":
+                cursor = (cursor - 1) % n
+            elif key == "down":
+                cursor = (cursor + 1) % n
+            elif key == "pgup":
+                cursor = max(0, cursor - (term_size()[1] - 4))
+            elif key == "pgdn":
+                cursor = min(n - 1, cursor + (term_size()[1] - 4))
+            elif key == "home":
+                cursor = 0
+            elif key == "end":
+                cursor = n - 1
+            elif key == "space":
+                selected ^= {cursor}
+            elif key == "all":
+                selected = set() if len(selected) == n else set(range(n))
+            elif key == "invert":
+                selected = set(range(n)) - selected
+            elif key == "diff":
+                diff_pager(*items[cursor])
+            elif key == "enter":
+                if selected:
+                    break
+                notice = " chua tick file nao - space de tick, q de huy"
+            elif key == "quit":
+                selected = None
+                break
+
+    if selected is None:
+        print("Da huy.")
+        sys.exit(0)
     paths = [items[i][1] for i in sorted(selected)]
-    run_git(["add", "--"] + paths)
-    print(c(f"da stage {len(paths)} file.", "32"))
+    stage_files(paths, [p for _, p in items])
+    print(c(f"da stage {len(paths)} file:", "32"),
+          c(", ".join(paths) if len(paths) <= 6 else
+            ", ".join(paths[:6]) + f", ... (+{len(paths) - 6})", "90"))
     return True
 
 
@@ -1278,32 +1667,26 @@ def call_groq(api_key, system, user, model=None, temperature=0.3):
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "ignore")
-        err(f"Groq API HTTP {e.code}: {detail[:300]}")
+        hint = None
         if e.code == 429:
-            print(c("  het quota/rate limit. Doi mot chut hoac xem: "
-                    "https://console.groq.com/settings/limits", "90"),
-                  file=sys.stderr)
+            hint = ("het quota/rate limit. Doi mot chut hoac xem: "
+                    "https://console.groq.com/settings/limits")
         elif e.code in (401, 403):
-            print(c("  key sai hoac het han. Tao key moi: "
-                    "https://console.groq.com/keys", "90"), file=sys.stderr)
+            hint = ("key sai hoac het han. Tao key moi: "
+                    "https://console.groq.com/keys")
         elif e.code == 404:
-            print(c(f"  model '{model}' khong ton tai. Xem model list: "
-                    "https://console.groq.com/docs/models", "90"),
-                  file=sys.stderr)
-        sys.exit(1)
+            hint = (f"model '{payload['model']}' khong ton tai. Xem model "
+                    "list: https://console.groq.com/docs/models")
+        fail(f"Groq API HTTP {e.code}: {detail[:300]}", hint)
     except urllib.error.URLError as e:
-        err(f"loi mang: {e.reason}")
-        print(c("  kiem tra ket noi internet/proxy roi thu lai.", "90"),
-              file=sys.stderr)
-        sys.exit(1)
+        fail(f"loi mang: {e.reason}",
+             "kiem tra ket noi internet/proxy roi thu lai.")
     try:
         msg = (body["choices"][0]["message"].get("content") or "").strip()
     except (KeyError, IndexError, AttributeError):
-        err("phan hoi API khong hop le: " + json.dumps(body)[:300])
-        sys.exit(1)
+        fail("phan hoi API khong hop le: " + json.dumps(body)[:300])
     if not msg:
-        err("model tra ve noi dung rong: " + json.dumps(body)[:300])
-        sys.exit(1)
+        fail("model tra ve noi dung rong: " + json.dumps(body)[:300])
     if msg.startswith("```"):
         lines = msg.splitlines()
         lines = [ln for ln in lines if not ln.strip().startswith("```")]
@@ -1311,7 +1694,8 @@ def call_groq(api_key, system, user, model=None, temperature=0.3):
     return msg
 
 
-def generate_message(files, vietnamese, hint, api_key, model):
+def generate_message(files, vietnamese, hint, api_key, model,
+                     temperature=0.3):
     """Tao commit message tu cac file DA stage (khong UI, khong sys.exit).
 
     Goi smart_diff -> build_prompt -> call_groq. Raise ValueError neu thieu file.
@@ -1320,7 +1704,7 @@ def generate_message(files, vietnamese, hint, api_key, model):
         raise ValueError("chua chon file nao")
     diff, skipped, _truncated = smart_diff(files)
     system, user = build_prompt(diff, files, vietnamese, hint, skipped)
-    return call_groq(api_key, system, user, model)
+    return call_groq(api_key, system, user, model, temperature)
 
 
 def add_coauthor(message):
@@ -1349,6 +1733,31 @@ def commit_with_message(message, amend=False):
         cwd=REPO_ROOT,
     )
     return res.returncode
+
+
+def commit_simple(message, amend=False):
+    """Commit cho GUI: bat ca output (console co the dang an). Tra (ok, text)."""
+    args = ["git", "commit", "-F", "-"] + (["--amend"] if amend else [])
+    res = subprocess.run(
+        args, input=message, cwd=REPO_ROOT,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    out = (res.stdout + res.stderr).strip()
+    return res.returncode == 0, out
+
+
+def diff_stats(from_head=False):
+    """(so file, dong them, dong bot) cua diff da stage (hoac HEAD khi amend)."""
+    args = (["show", "--shortstat", "--format=", "HEAD"] if from_head
+            else ["diff", "--staged", "--shortstat"])
+    out = run_git(args, check=False)
+
+    def grab(pattern):
+        m = re.search(pattern, out)
+        return int(m.group(1)) if m else 0
+
+    return (grab(r"(\d+) files? changed"), grab(r"(\d+) insertion"),
+            grab(r"(\d+) deletion"))
 
 
 def branch_status():
@@ -1641,9 +2050,10 @@ def main():
         finish(auto_push)
 
     branch, ahead = branch_status()
+    n_files, ins, dels = diff_stats(from_head)
     branch_line = c(f"nhanh {branch}", "36") + (
         c(f"  ↑{ahead} chua push", "33") if ahead else ""
-    )
+    ) + c(f"  ·  {n_files} file  +{ins} −{dels}", "90")
 
     temperature = 0.3
     while True:
@@ -1664,6 +2074,8 @@ def main():
         prompt += (
             c("[e]", "1") + " sua  "
             + c("[r]", "1") + " tao lai  "
+            + c("[m]", "1") + " goi y  "
+            + c("[d]", "1") + " diff  "
             + c("[n]", "1") + " huy: "
         )
         try:
@@ -1678,6 +2090,26 @@ def main():
         if choice == "r":
             temperature = min(temperature + 0.3, 1.0)
             message = generate(temperature)
+            continue
+        if choice == "m":
+            # them/doi goi y roi sinh lai (nhu -m "..." nhung khong phai chay lai)
+            try:
+                new_hint = input(c("goi y cho AI (Enter = bo qua): ", "1")).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                continue
+            if new_hint:
+                hint = new_hint
+                temperature = 0.3
+                message = generate(temperature)
+            continue
+        if choice == "d":
+            if from_head:
+                show_diff_text("diff commit HEAD (--amend)", run_git(
+                    ["show", "--format=", "--no-color", "HEAD"], check=False))
+            else:
+                show_diff_text("diff da stage", run_git(
+                    ["diff", "--staged", "--no-color"], check=False))
             continue
         if choice == "e":
             message = edit_message(message)
