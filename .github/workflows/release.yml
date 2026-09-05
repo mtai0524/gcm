@@ -36,7 +36,7 @@ jobs:
         id: ver
         shell: bash
         run: |
-          VERSION=$(python -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('gcm').read(), re.M).group(1))")
+          VERSION=$(python -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('gcm', encoding='utf-8').read(), re.M).group(1))")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "gcm VERSION = $VERSION"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
