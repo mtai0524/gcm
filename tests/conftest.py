@@ -30,7 +30,11 @@ def git_repo(tmp_path, core, monkeypatch):
     repo.mkdir()
     env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-    for args in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "init"]):
+    # Khai bao identity ngay trong repo tam: tren CI khong co config toan cuc,
+    # thieu no thi moi `git commit` cua core (commit_simple, GUI) deu that bai.
+    for args in (["init", "-q"], ["config", "user.name", "t"],
+                 ["config", "user.email", "t@t"],
+                 ["commit", "-q", "--allow-empty", "-m", "init"]):
         subprocess.run(["git", *args], cwd=repo, env=env, check=True)
     monkeypatch.chdir(repo)
     monkeypatch.setattr(core, "REPO_ROOT", str(repo))
