@@ -1,25 +1,38 @@
 name: release
 
+# Tu dong phat hanh: chi can bump VERSION trong file `gcm` roi push len master.
+# Neu chua co release cho VERSION do -> chay test, build MSI tren Windows,
+# tao tag v<VERSION> + GitHub Release kem gcm-<VERSION>.msi. Push lai ma
+# VERSION khong doi thi chi chay test (khong build, khong tao release trung).
+# Van ho tro cach cu: push tag v* (tag phai khop VERSION).
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [master]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # can toan bo tag de biet VERSION da phat hanh chua
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Determine and check version
+      - name: Determine version and whether to publish
         id: ver
         shell: bash
         run: |
@@ -32,18 +45,33 @@ jobs:
               echo "::error::Tag $GITHUB_REF_NAME does not match VERSION $VERSION in gcm"
               exit 1
             fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists -> tests only, no publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No release for v$VERSION yet -> will build and publish"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Run tests
+        run: |
+          pip install pytest
+          python -m pytest tests -q -p no:cacheprovider
+
       - name: Install PyInstaller
+        if: steps.ver.outputs.publish == 'true'
         run: pip install pyinstaller
 
       - name: Build gcm.exe
+        if: steps.ver.outputs.publish == 'true'
         shell: bash
         run: |
           cp gcm gcm_entry.py
-          pyinstaller --onefile --name gcm gcm_entry.py
+          pyinstaller --onefile --name gcm --hidden-import gcm_gui --paths . gcm_entry.py
 
       - name: Smoke test gcm.exe
+        if: steps.ver.outputs.publish == 'true'
         shell: bash
         run: |
           OUT=$(./dist/gcm.exe -v)
@@ -51,6 +79,7 @@ jobs:
           echo "$OUT" | grep -q "gcm v${{ steps.ver.outputs.version }}"
 
       - name: Install WiX
+        if: steps.ver.outputs.publish == 'true'
         shell: bash
         run: |
           dotnet tool install --global wix --version 5.*
@@ -59,13 +88,17 @@ jobs:
           wix extension add -g "WixToolset.UI.wixext/$WIXVER"
 
       - name: Build MSI
+        if: steps.ver.outputs.publish == 'true'
         shell: bash
         run: |
           wix build -arch x64 -ext WixToolset.UI.wixext packaging/windows/gcm.wxs -d Version=${{ steps.ver.outputs.version }} -o gcm-${{ steps.ver.outputs.version }}.msi
 
       - name: Create GitHub Release
-        if: github.ref_type == 'tag'
+        if: steps.ver.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: gcm v${{ steps.ver.outputs.version }}
           files: gcm-${{ steps.ver.outputs.version }}.msi
           generate_release_notes: true

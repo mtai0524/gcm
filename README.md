@@ -119,7 +119,16 @@ winget install -e --id Microsoft.DotNet.SDK.8  # .NET SDK (for WiX)
 ```
 
 The script auto-installs PyInstaller and the WiX toolset. Double-click the
-resulting MSI to install, or upload it to GitHub Releases.
+resulting MSI to install.
+
+#### Publishing a release (automatic)
+
+You never upload an MSI by hand. Bump `VERSION` in `gcm`, commit, push to
+`master` — GitHub Actions (`.github/workflows/release.yml`) runs the tests,
+builds the MSI on a Windows runner, and creates tag `vX.Y.Z` plus a Release with
+`gcm-X.Y.Z.msi` attached. Pushes that don't change `VERSION` (or whose version is
+already released) only run the tests. Pushing a tag `vX.Y.Z` by hand still works
+too; the tag must match `VERSION`.
 
 ---
 

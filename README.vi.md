@@ -118,8 +118,15 @@ winget install -e --id Python.Python.3.12      # Python 3
 winget install -e --id Microsoft.DotNet.SDK.8  # .NET SDK (cho WiX)
 ```
 
-Script tự cài PyInstaller và WiX. Bấm đúp file MSI để cài, hoặc upload lên
-GitHub Releases.
+Script tự cài PyInstaller và WiX. Bấm đúp file MSI để cài.
+
+#### Phát hành (tự động)
+
+Không cần upload MSI bằng tay. Chỉ cần tăng `VERSION` trong file `gcm`, commit,
+push lên `master` — GitHub Actions (`.github/workflows/release.yml`) sẽ chạy test,
+build MSI trên máy Windows của GitHub, tự tạo tag `vX.Y.Z` và Release kèm
+`gcm-X.Y.Z.msi`. Push mà `VERSION` không đổi (hoặc đã phát hành rồi) thì chỉ chạy
+test. Vẫn có thể push tag `vX.Y.Z` bằng tay như trước; tag phải khớp `VERSION`.
 
 ---
 
