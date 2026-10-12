@@ -1840,21 +1840,62 @@ def take_value(argv, *names):
     return value, rest
 
 
+# editor GUI thoat ngay khi mo file -> phai them co de no doi dong cua so
+_EDITOR_WAIT_FLAG = {
+    "code": "--wait", "code-insiders": "--wait", "codium": "--wait",
+    "subl": "--wait", "sublime_text": "--wait", "atom": "--wait",
+    "gedit": "--wait", "notepad++": "-multiInst -notabbar -nosession",
+}
+
+
+def resolve_editor():
+    """Tra ve argv cua editor, theo thu tu uu tien cua git."""
+    import shlex
+    cands = [
+        os.environ.get("GIT_EDITOR"),
+        run_git(["config", "--get", "core.editor"], check=False).strip(),
+        os.environ.get("VISUAL"),
+        os.environ.get("EDITOR"),
+    ]
+    for cand in cands:
+        if not cand or not cand.strip():
+            continue
+        # `true` / `:` la editor rong (git dung de bo qua buoc sua)
+        if cand.strip() in ("true", ":", "/bin/true"):
+            continue
+        argv = shlex.split(cand, posix=os.name != "nt")
+        if os.name == "nt":
+            argv = [a.strip('"') for a in argv]
+        if len(argv) == 1:
+            flag = _EDITOR_WAIT_FLAG.get(
+                os.path.basename(argv[0]).lower().removesuffix(".exe"))
+            if flag:
+                argv += flag.split()
+        return argv
+    return ["notepad"] if os.name == "nt" else ["nano"]
+
+
 def edit_message(message):
-    """Open the message in $EDITOR and return the edited text."""
+    """Mo message trong editor, tra ve text da sua (None neu khong doi)."""
     import tempfile
-    editor = os.environ.get("EDITOR") or (
-        "notepad" if os.name == "nt" else "nano"
-    )
+    editor = resolve_editor()
     with tempfile.NamedTemporaryFile(
-        "w+", suffix=".gitcommit", delete=False
+        "w", suffix=".gitcommit", delete=False, encoding="utf-8", newline="\n"
     ) as tf:
         tf.write(message)
         path = tf.name
-    subprocess.run([editor, path])
-    with open(path) as f:
-        edited = f.read().strip()
-    os.unlink(path)
+    try:
+        res = subprocess.run(editor + [path])
+        if res.returncode != 0:
+            err(f"editor `{editor[0]}` thoat voi loi {res.returncode}.")
+            return None
+        with open(path, encoding="utf-8", errors="replace") as f:
+            edited = f.read().strip()
+    finally:
+        os.unlink(path)
+    if edited == message.strip():
+        print(c("(message khong thay doi)", "90"), file=sys.stderr)
+        return None
     return edited
 
 
@@ -2112,10 +2153,14 @@ def main():
                     ["diff", "--staged", "--no-color"], check=False))
             continue
         if choice == "e":
-            message = edit_message(message)
-            if not message:
-                err("message rong, da huy.")
-                sys.exit(1)
+            edited = edit_message(message)
+            if edited is not None:
+                if not edited:
+                    err("message rong, bo qua lan sua nay.")
+                else:
+                    message = edited
+            # quay lai man xac nhan de xem lai roi moi commit
+            continue
         break
 
     finish(auto_push or choice == "p")
